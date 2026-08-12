@@ -2,25 +2,55 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getStoreEvents } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
+import { getRazorpayInstance } from "@/lib/razorpay";
 
 export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
 
   try {
     const body = await request.json();
-    const { eventId, numParticipants = 1, participant } = body;
+    const { registrationId, eventId, numParticipants = 1 } = body;
 
-    if (!eventId) {
-      return NextResponse.json({ error: "Event ID is required." }, { status: 400 });
+    if (!eventId && !registrationId) {
+      return NextResponse.json(
+        { error: "Event ID or Registration ID is required." },
+        { status: 400 }
+      );
     }
 
+    let targetEventId = eventId;
+    let registrationRecord: any = null;
+
+    // 1. If registrationId is provided, fetch authoritative registration & event from Supabase
+    if (supabase && registrationId) {
+      const { data: regData } = await supabase
+        .from("registrations")
+        .select("*, events(*)")
+        .eq("id", registrationId)
+        .maybeSingle();
+
+      if (regData) {
+        registrationRecord = regData;
+        targetEventId = regData.event_id || regData.events?.id || targetEventId;
+        
+        // Prevent duplicate payment if already paid
+        if (regData.payment_status === "paid" || regData.registration_status === "confirmed") {
+          return NextResponse.json(
+            { error: "This registration is already paid and confirmed." },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // 2. Fetch authoritative Event record from Supabase or fallback store
     let eventRecord: any = null;
 
-    if (supabase) {
+    if (supabase && targetEventId) {
       const { data } = await supabase
         .from("events")
         .select("*")
-        .or(`id.eq.${eventId},slug.eq.${eventId}`)
+        .or(`id.eq.${targetEventId},slug.eq.${targetEventId}`)
         .maybeSingle();
 
       if (data) {
@@ -28,10 +58,10 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!eventRecord) {
+    if (!eventRecord && targetEventId) {
       const storeEvents = getStoreEvents();
       eventRecord = storeEvents.find(
-        (e) => String(e.id) === String(eventId) || e.slug === eventId
+        (e) => String(e.id) === String(targetEventId) || e.slug === targetEventId
       );
     }
 
@@ -71,35 +101,97 @@ export async function POST(request: Request) {
       }
     }
 
-    if (
-      event.max_participants &&
-      event.current_participants !== undefined &&
-      event.current_participants >= event.max_participants
-    ) {
-      return NextResponse.json(
-        { error: "This event has reached maximum participant capacity." },
-        { status: 400 }
-      );
-    }
-
-    // Authoritative fee calculation
+    // 3. Authoritative fee calculation (NEVER trust frontend amount!)
     const unitFee = Number(event.registration_fee || 0);
     const count = Math.max(1, parseInt(String(numParticipants), 10) || 1);
-    const totalAmount = unitFee * count;
+    const totalAmountInRupees = registrationRecord?.amount !== undefined ? Number(registrationRecord.amount) : unitFee * count;
+    
+    // Amount in paise (1 INR = 100 Paise)
+    const amountInPaise = Math.round(totalAmountInRupees * 100);
 
-    const razorpayOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    let razorpayOrderId = "";
+    const razorpayInstance = getRazorpayInstance();
+    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
 
+    if (razorpayInstance) {
+      try {
+        const orderOptions = {
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: registrationRecord?.registration_number || `receipt_${Date.now()}`,
+          notes: {
+            eventId: event.id,
+            registrationId: registrationId || "",
+            eventTitle: event.title,
+          },
+        };
+
+        const razorpayOrder = await razorpayInstance.orders.create(orderOptions);
+        razorpayOrderId = razorpayOrder.id;
+      } catch (rzpErr: any) {
+        console.error("Razorpay SDK Order Creation error:", rzpErr);
+        return NextResponse.json(
+          { error: rzpErr.description || rzpErr.message || "Failed to create order with Razorpay Gateway." },
+          { status: 500 }
+        );
+      }
+    } else {
+      // Fallback order generation for dev/test mode if keys not yet configured
+      console.warn("Notice: Razorpay credentials missing or incomplete in env. Generating order placeholder.");
+      razorpayOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
+
+    // 4. Save/Update payment record in Supabase registration_payments
+    if (supabase && registrationId) {
+      try {
+        const { data: existingPay } = await supabase
+          .from("registration_payments")
+          .select("id")
+          .eq("registration_id", registrationId)
+          .maybeSingle();
+
+        if (existingPay) {
+          await supabase
+            .from("registration_payments")
+            .update({
+              razorpay_order_id: razorpayOrderId,
+              amount: totalAmountInRupees,
+              currency: "INR",
+              status: "created",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingPay.id);
+        } else {
+          await supabase.from("registration_payments").insert({
+            registration_id: registrationId,
+            razorpay_order_id: razorpayOrderId,
+            amount: totalAmountInRupees,
+            currency: "INR",
+            status: "created",
+          });
+        }
+      } catch (dbPayErr) {
+        console.warn("Notice updating registration_payments record:", dbPayErr);
+      }
+    }
+
+    // Return standardized Razorpay order response
     return NextResponse.json({
       success: true,
+      orderId: razorpayOrderId,
+      amount: amountInPaise,
+      currency: "INR",
+      keyId: keyId,
       order: {
         id: razorpayOrderId,
         eventId: event.id,
         eventTitle: event.title,
         unitFee,
         numParticipants: count,
-        amount: totalAmount,
-        currency: event.currency || "INR",
-        razorpayKeyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_placeholder",
+        amount: totalAmountInRupees,
+        amountInPaise,
+        currency: "INR",
+        razorpayKeyId: keyId,
       },
     });
   } catch (err: any) {

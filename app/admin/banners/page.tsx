@@ -1,9 +1,14 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import AdminBannersPage from "../banner/page";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AdminBannersAliasPage() {
-  return <AdminBannersPage />;
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/admin/banner");
+  }, [router]);
+
+  return null;
 }

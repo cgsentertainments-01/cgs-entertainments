@@ -573,7 +573,10 @@ export default function CategoriesPage() {
         }
         @media (max-width: 640px) {
           .cat-grid-layout { grid-template-columns: 1fr !important; }
-          .cat-events-grid { grid-template-columns: 1fr !important; }
+          .cat-events-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
           .cat-hero-title { font-size: 32px !important; }
         }
       `}</style>

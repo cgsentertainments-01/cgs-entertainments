@@ -392,3 +392,35 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function GET(request: Request) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ success: false, error: "Database connection unavailable." }, { status: 500 });
+  }
+
+  try {
+    const { data: registrations, error } = await supabase
+      .from("registrations")
+      .select(`
+        *,
+        events ( id, title, slug, venue, city, state, event_date, registration_fee ),
+        participants ( id, participant_number, full_name, email, phone, city, state ),
+        event_categories ( id, name ),
+        dance_styles ( id, name ),
+        registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("GET /api/registrations error:", error.message);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, registrations: registrations || [] });
+  } catch (err: any) {
+    console.error("GET /api/registrations exception:", err);
+    return NextResponse.json({ success: false, error: err.message || "Failed to fetch registrations." }, { status: 500 });
+  }
+}
+

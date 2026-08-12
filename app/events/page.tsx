@@ -163,7 +163,9 @@ function EventsPageContent() {
       const matchesCat =
         activeCategory === "All" ||
         catName.toLowerCase() === activeCategory.toLowerCase() ||
-        (e.badge && e.badge.toLowerCase() === activeCategory.toLowerCase());
+        (e.badge && e.badge.toLowerCase() === activeCategory.toLowerCase()) ||
+        (e.category_id && String(e.category_id).toLowerCase() === activeCategory.toLowerCase()) ||
+        (e.category_slug && e.category_slug.toLowerCase() === activeCategory.toLowerCase());
 
       // 2. Location Filter
       const evtLoc = `${e.location || ""} ${e.city || ""} ${e.venue || ""}`.toLowerCase();
@@ -1078,7 +1080,10 @@ function EventsPageContent() {
           .events-page-grid { grid-template-columns: repeat(2, 1fr) !important; }
         }
         @media (max-width: 639px) {
-          .events-page-grid { grid-template-columns: 1fr !important; }
+          .events-page-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
         }
 
         @media (max-width: 768px) {

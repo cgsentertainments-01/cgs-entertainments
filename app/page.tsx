@@ -13,8 +13,8 @@ export default function HomePage() {
       <Navbar />
       <main style={{ paddingTop: 16 }}>
         <Hero />
-        <DiscoverEventHub />
         <HomeCategories />
+        <DiscoverEventHub />
         <Statistics />
         <Newsletter />
         <CTA />

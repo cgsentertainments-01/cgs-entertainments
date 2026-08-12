@@ -62,11 +62,19 @@ function RegistrationSuccessContent() {
   const participantName = regData?.participants?.full_name || "Valued Participant";
   const regNumber = regData?.registration_number || regId || "CGS-REG-CONFIRMED";
   const eventTitle = regData?.events?.title || "CGS Entertainments Event";
+  const eventDate = regData?.events?.event_date
+    ? new Date(regData.events.event_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : "Event Date TBA";
   const eventCity = regData?.events?.city || "Hyderabad";
   const categoryName = regData?.event_categories?.name || regData?.dance_styles?.name || "Participant";
   const amountPaid = regData?.amount !== undefined ? `₹${regData.amount}` : "Paid";
   const statusBadge = (regData?.registration_status || "confirmed").toUpperCase();
   const qrToken = regData?.qr_token || regNumber;
+  const paymentId =
+    regData?.registration_payments?.[0]?.razorpay_payment_id ||
+    regData?.registration_payments?.razorpay_payment_id ||
+    regData?.razorpay_payment_id ||
+    "pay_verified";
 
   return (
     <div style={{ maxWidth: 720, margin: "40px auto 60px", padding: "0 24px" }}>
@@ -101,23 +109,23 @@ function RegistrationSuccessContent() {
           style={{
             padding: "4px 14px",
             borderRadius: 20,
-            background: "#F3E8FF",
-            color: "#6D28D9",
+            background: "#DCFCE7",
+            color: "#166534",
             fontSize: 12,
             fontWeight: 800,
             letterSpacing: 1,
             textTransform: "uppercase",
           }}
         >
-          REGISTRATION {statusBadge}
+          {statusBadge === "CONFIRMED" ? "PAYMENT SUCCESSFUL 🎉" : `REGISTRATION ${statusBadge}`}
         </span>
 
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "#111827", margin: "14px 0 8px" }}>
-          You're Registered! 🎉
+          Payment Successful 🎉
         </h1>
 
-        <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 28px", lineHeight: 1.6 }}>
-          A confirmation email &amp; WhatsApp notification with your Participant Receipt and QR ID Card have been dispatched.
+        <p style={{ fontSize: 15, color: "#4B5563", margin: "0 0 28px", lineHeight: 1.6, fontWeight: 600 }}>
+          Your event registration is confirmed.
         </p>
 
         {error && (
@@ -138,6 +146,43 @@ function RegistrationSuccessContent() {
             <AlertCircle size={16} /> {error}
           </div>
         )}
+
+        {/* Payment Summary Box */}
+        <div
+          style={{
+            background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
+            borderRadius: 16,
+            padding: "20px 24px",
+            textAlign: "left",
+            marginBottom: 24,
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: "16px 24px",
+            fontSize: 13.5,
+          }}
+        >
+          <div>
+            <div style={{ color: "#64748B", fontWeight: 700, fontSize: 12, textTransform: "uppercase" }}>Registration ID</div>
+            <div style={{ fontWeight: 900, color: "#6D28D9", fontSize: 15, marginTop: 2 }}>{regNumber}</div>
+          </div>
+          <div>
+            <div style={{ color: "#64748B", fontWeight: 700, fontSize: 12, textTransform: "uppercase" }}>Payment ID</div>
+            <div style={{ fontWeight: 800, color: "#0F172A", fontSize: 13.5, marginTop: 2, fontFamily: "monospace" }}>{paymentId}</div>
+          </div>
+          <div>
+            <div style={{ color: "#64748B", fontWeight: 700, fontSize: 12, textTransform: "uppercase" }}>Event</div>
+            <div style={{ fontWeight: 800, color: "#0F172A", marginTop: 2 }}>{eventTitle}</div>
+          </div>
+          <div>
+            <div style={{ color: "#64748B", fontWeight: 700, fontSize: 12, textTransform: "uppercase" }}>Date</div>
+            <div style={{ fontWeight: 800, color: "#0F172A", marginTop: 2 }}>{eventDate}</div>
+          </div>
+          <div style={{ gridColumn: "span 2" }}>
+            <div style={{ color: "#64748B", fontWeight: 700, fontSize: 12, textTransform: "uppercase" }}>Amount Paid</div>
+            <div style={{ fontWeight: 900, color: "#059669", fontSize: 18, marginTop: 2 }}>{amountPaid}</div>
+          </div>
+        </div>
 
         {/* Live Database ID Card */}
         <div
@@ -165,7 +210,7 @@ function RegistrationSuccessContent() {
             <div>
               <div style={{ fontSize: 18, fontWeight: 900 }}>{participantName}</div>
               <div style={{ fontSize: 14, color: "#C4B5FD", marginTop: 2 }}>{eventTitle}</div>
-              <div style={{ fontSize: 12, color: "#E0E7FF", marginTop: 6, display: "flex", gap: 12 }}>
+              <div style={{ fontSize: 12, color: "#E0E7FF", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <span>Category: {categoryName}</span>
                 <span>·</span>
                 <span>Location: {eventCity}</span>
@@ -201,31 +246,48 @@ function RegistrationSuccessContent() {
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <Link
+            href="/my-registrations"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 22px",
+              background: "#6D28D9",
+              color: "#fff",
+              borderRadius: 12,
+              fontSize: 14,
+              fontWeight: 800,
+              textDecoration: "none",
+            }}
+          >
+            View Registration
+          </Link>
           <button
             onClick={() => window.print()}
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              padding: "12px 24px",
-              background: "#6D28D9",
-              color: "#fff",
-              border: "none",
+              padding: "12px 22px",
+              background: "#F3E8FF",
+              color: "#6D28D9",
+              border: "1.5px solid #C4B5FD",
               borderRadius: 12,
               fontSize: 14,
               fontWeight: 800,
               cursor: "pointer",
             }}
           >
-            <Download size={16} /> Print / Save Pass
+            <Download size={16} /> Download Receipt
           </button>
           <Link
-            href="/events"
+            href="/"
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              padding: "12px 24px",
+              padding: "12px 22px",
               background: "#fff",
               color: "#374151",
               border: "1.5px solid #E5E7EB",
@@ -235,7 +297,7 @@ function RegistrationSuccessContent() {
               textDecoration: "none",
             }}
           >
-            Explore More Events <ChevronRight size={16} />
+            Back to Home <ChevronRight size={16} />
           </Link>
         </div>
       </div>

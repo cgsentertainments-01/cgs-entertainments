@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Flame,
 } from "lucide-react";
+import { EventCard } from "@/components/events/EventCard";
 
 export type EventHubItem = {
   id: string;
@@ -131,17 +132,6 @@ const MOCK_UPCOMING_EVENTS: EventHubItem[] = [
   },
 ];
 
-const CATEGORY_CHIPS = [
-  { id: "all", label: "All", badge: "ALL" },
-  { id: "dance", label: "Dance", badge: "DANCE" },
-  { id: "design", label: "Design", badge: "DESIGN" },
-  { id: "modeling", label: "Modeling", badge: "MODELING" },
-  { id: "acting", label: "Acting", badge: "ACTING" },
-  { id: "singing", label: "Singing", badge: "SINGING" },
-  { id: "music", label: "Music", badge: "MUSIC" },
-  { id: "photography", label: "Photography", badge: "PHOTOGRAPHY" },
-];
-
 export function DiscoverEventHub() {
   const [events, setEvents] = useState<EventHubItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,6 +144,35 @@ export function DiscoverEventHub() {
 
   // Modal State
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+
+  // Dynamic Categories state
+  const [dbCategories, setDbCategories] = useState<{ id: string; label: string; badge: string }[]>([
+    { id: "all", label: "All", badge: "ALL" },
+  ]);
+
+  useEffect(() => {
+    async function fetchChips() {
+      try {
+        const res = await fetch("/api/categories", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.categories && data.categories.length > 0) {
+            const mapped = data.categories.map((c: any) => ({
+              id: c.slug || c.id,
+              label: c.name,
+              badge: (c.slug || c.name).toUpperCase(),
+            }));
+            setDbCategories([{ id: "all", label: "All", badge: "ALL" }, ...mapped]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load category chips:", err);
+      }
+    }
+    fetchChips();
+  }, []);
+
+  const categoryChips = dbCategories;
 
   // Wishlist State (persisted in localStorage)
   const [wishlist, setWishlist] = useState<Record<string, boolean>>({});
@@ -452,7 +471,7 @@ export function DiscoverEventHub() {
         }}
         className="category-chips-scroll"
       >
-        {CATEGORY_CHIPS.map((chip) => {
+        {categoryChips.map((chip) => {
           const isActive = selectedCategory.toLowerCase() === chip.label.toLowerCase();
           return (
             <button
@@ -767,157 +786,18 @@ export function DiscoverEventHub() {
           </Link>
         </div>
 
-        {/* Cards Carousel / Grid */}
+        {/* Cards Grid - 2 columns on mobile */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gridTemplateColumns: "repeat(4, 1fr)",
             gap: 18,
           }}
           className="upcoming-events-grid"
         >
-          {upcomingList.map((evt) => {
-            const isSaved = Boolean(wishlist[evt.id]);
-            return (
-              <div
-                key={evt.id}
-                style={{
-                  background: "#FFFFFF",
-                  border: "1.5px solid #E5E7EB",
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
-                  display: "flex",
-                  flexDirection: "column",
-                  transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                }}
-                className="upcoming-card-hover"
-              >
-                {/* Thumbnail Banner */}
-                <div
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    height: 150,
-                    background: "#1E1B4B",
-                    overflow: "hidden",
-                  }}
-                >
-                  <Image
-                    src={
-                      evt.img ||
-                      "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=85"
-                    }
-                    alt={evt.title}
-                    fill
-                    sizes="(max-width: 640px) 100vw, 300px"
-                    style={{ objectFit: "cover" }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)",
-                    }}
-                  />
-
-                  {/* Badge */}
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 10,
-                      left: 10,
-                      background: evt.badgeBg || "#6D28D9",
-                      color: "#FFF",
-                      fontSize: 9.5,
-                      fontWeight: 900,
-                      padding: "4px 9px",
-                      borderRadius: 6,
-                      letterSpacing: 1,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {evt.badge || "EVENT"}
-                  </span>
-
-                  {/* Wishlist Heart */}
-                  <button
-                    onClick={(e) => toggleWishlist(evt.id, e)}
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      border: "none",
-                      background: isSaved ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.35)",
-                      backdropFilter: "blur(4px)",
-                      width: 32,
-                      height: 32,
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <Heart size={16} color={isSaved ? "#EF4444" : "#FFFFFF"} fill={isSaved ? "#EF4444" : "none"} />
-                  </button>
-                </div>
-
-                {/* Body Details */}
-                <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", flex: 1, gap: 8 }}>
-                  <h3
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 800,
-                      color: "#111827",
-                      margin: 0,
-                      lineHeight: 1.3,
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                      height: "2.6em",
-                    }}
-                  >
-                    {evt.title}
-                  </h3>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#4B5563", fontWeight: 700 }}>
-                    <span>📅</span>
-                    <span>{evt.date}</span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#4B5563", fontWeight: 600 }}>
-                    <span>📍</span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {evt.location}
-                    </span>
-                  </div>
-
-                  <Link
-                    href={`/events/${evt.slug || evt.id}`}
-                    style={{
-                      marginTop: "auto",
-                      padding: "9px 0",
-                      borderRadius: 10,
-                      border: "1.5px solid #DDD6FE",
-                      background: "#FFFFFF",
-                      color: "#6D28D9",
-                      fontSize: 13,
-                      fontWeight: 800,
-                      textDecoration: "none",
-                      textAlign: "center",
-                      display: "block",
-                      transition: "all 0.2s ease",
-                    }}
-                    className="quick-card-btn"
-                  >
-                    View Details →
-                  </Link>
-                </div>
-              </div>
-            );
-          })}
+          {upcomingList.map((evt) => (
+            <EventCard key={evt.id} evt={evt} />
+          ))}
         </div>
       </section>
 
@@ -990,7 +870,7 @@ export function DiscoverEventHub() {
                   }}
                 >
                   <option value="All">All Categories</option>
-                  {CATEGORY_CHIPS.filter((c) => c.id !== "all").map((c) => (
+                  {categoryChips.filter((c) => c.id !== "all").map((c) => (
                     <option key={c.id} value={c.label}>
                       {c.label}
                     </option>
@@ -1094,6 +974,11 @@ export function DiscoverEventHub() {
 
       {/* ── STYLES ── */}
       <style jsx global>{`
+        @media (max-width: 767px) {
+          .cgs-discover-hub {
+            padding-bottom: 96px !important;
+          }
+        }
         .category-chips-scroll::-webkit-scrollbar {
           display: none;
         }
@@ -1105,19 +990,27 @@ export function DiscoverEventHub() {
             transform: translateY(0);
           }
         }
+        @media (max-width: 639px) {
+          .upcoming-events-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
+        }
+        @media (min-width: 640px) and (max-width: 1023px) {
+          .upcoming-events-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .upcoming-events-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 18px !important;
+          }
+        }
         .featured-hero-card:hover {
           transform: translateY(-4px);
           box-shadow: 0 18px 44px rgba(109, 40, 217, 0.16) !important;
-        }
-        .upcoming-card-hover:hover {
-          transform: translateY(-4px);
-          border-color: #C4B5FD !important;
-          box-shadow: 0 12px 28px rgba(109, 40, 217, 0.12) !important;
-        }
-        .quick-card-btn:hover {
-          background: #6D28D9 !important;
-          color: #ffffff !important;
-          border-color: #6D28D9 !important;
         }
         .cgs-bell-btn:hover,
         .filter-gear-btn:hover {

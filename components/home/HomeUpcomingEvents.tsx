@@ -173,8 +173,24 @@ export function HomeUpcomingEvents() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
-        @media (max-width: 1024px) { .evt-grid { grid-template-columns: repeat(2,1fr) !important; } }
-        @media (max-width: 560px)  { .evt-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 639px) {
+          .evt-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
+        }
+        @media (min-width: 640px) and (max-width: 1023px) {
+          .evt-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .evt-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 18px !important;
+          }
+        }
         .view-all-btn2:hover { background: #F5F3FF !important; }
       `}</style>
     </section>

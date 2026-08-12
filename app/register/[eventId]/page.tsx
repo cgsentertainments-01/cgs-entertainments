@@ -103,7 +103,19 @@ function BackBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PayNowBtn({ amount, onClick, disabled = false, loading = false }: { amount: string; onClick: () => void; disabled?: boolean; loading?: boolean }) {
+function PayNowBtn({
+  amount,
+  onClick,
+  disabled = false,
+  loading = false,
+  loadingText,
+}: {
+  amount: string;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  loadingText?: string | null;
+}) {
   const [h, setH] = useState(false);
   return (
     <button
@@ -141,7 +153,7 @@ function PayNowBtn({ amount, onClick, disabled = false, loading = false }: { amo
         opacity: disabled ? 0.7 : 1,
       }}
     >
-      <Lock size={18} /> {loading ? "Processing..." : `Pay ${amount} Now`}
+      <Lock size={18} /> {loading ? (loadingText || "Processing...") : `Pay ${amount} Now`}
       {!loading && <ChevronRight size={19} style={{ transform: h && !disabled ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />}
     </button>
   );
@@ -331,6 +343,24 @@ export default function RegistrationPage() {
     }
   };
 
+  const [paymentState, setPaymentState] = useState<"idle" | "creating_order" | "processing" | "verifying" | "cancelled" | "failed">("idle");
+  const [paymentProcessingMsg, setPaymentProcessingMsg] = useState<string | null>(null);
+
+  // Dynamic Razorpay Checkout SDK Script Loader
+  const loadRazorpayScript = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (typeof window !== "undefined" && (window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   // Secure Backend Registration & Payment Handler
   const handleFinalPayment = async () => {
     if (!form.agreeCorrect || !form.agreeRules || !form.signature.trim() || !form.signatureDate.trim()) {
@@ -341,6 +371,8 @@ export default function RegistrationPage() {
     if (!evt) return;
 
     setSubmittingPayment(true);
+    setPaymentState("processing");
+    setPaymentProcessingMsg("Processing registration details...");
     setErrorMsg(null);
 
     try {
@@ -362,6 +394,7 @@ export default function RegistrationPage() {
             setErrorMsg(uploadData.error || "Video upload failed. Registration cannot proceed without video.");
             setSubmittingPayment(false);
             setVideoUploading(false);
+            setPaymentState("idle");
             setUploadProgressMsg(null);
             return;
           }
@@ -372,6 +405,7 @@ export default function RegistrationPage() {
           setErrorMsg("Network error while uploading video. Please check your connection and try again.");
           setSubmittingPayment(false);
           setVideoUploading(false);
+          setPaymentState("idle");
           setUploadProgressMsg(null);
           return;
         } finally {
@@ -430,52 +464,60 @@ export default function RegistrationPage() {
       if (!res.ok || !data.success) {
         setErrorMsg(data.error || "Failed to complete registration. Please try again.");
         setSubmittingPayment(false);
+        setPaymentState("idle");
+        setPaymentProcessingMsg(null);
         return;
       }
 
-      // If registration is free or already confirmed immediately
-      if (data.confirmed || !data.razorpayOrderId || data.amount === 0) {
+      // Free events (₹0) -> confirm immediately and redirect
+      if (data.confirmed || data.amount === 0) {
         router.push(`/registration-success?registrationId=${encodeURIComponent(data.registrationId)}`);
         return;
       }
 
-      // 2. Process Razorpay Payment & Backend Verification
-      const triggerVerification = async (payDetails: any) => {
-        try {
-          const verifyRes = await fetch("/api/payments/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              registrationId: data.registrationId,
-              razorpayOrderId: payDetails.razorpay_order_id || data.razorpayOrderId,
-              razorpayPaymentId: payDetails.razorpay_payment_id || `pay_${Date.now()}`,
-              razorpaySignature: payDetails.razorpay_signature || "simulated_signature",
-            }),
-          });
-          const verifyData = await verifyRes.json();
-          if (verifyRes.ok && verifyData.success) {
-            router.push(`/registration-success?registrationId=${encodeURIComponent(data.registrationId)}`);
-          } else {
-            setErrorMsg(verifyData.error || "Payment verification failed. Please contact support.");
-            setSubmittingPayment(false);
-          }
-        } catch (vErr) {
-          console.error("Verification error:", vErr);
-          setErrorMsg("Payment verification network error. Please refresh and check your registration status.");
-          setSubmittingPayment(false);
-        }
-      };
+      // 2. Call /api/payment/create-order to create official Razorpay Order
+      setPaymentState("creating_order");
+      setPaymentProcessingMsg("Creating secure payment...");
 
+      const orderRes = await fetch("/api/payment/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          registrationId: data.registrationId,
+          eventId: evt.id,
+          numParticipants: form.numParticipants,
+        }),
+      });
+
+      const orderData = await orderRes.json();
+
+      if (!orderRes.ok || !orderData.success) {
+        setErrorMsg(orderData.error || "Failed to initialize payment gateway. Please try again.");
+        setSubmittingPayment(false);
+        setPaymentState("failed");
+        setPaymentProcessingMsg(null);
+        return;
+      }
+
+      // 3. Load Razorpay Checkout SDK Script
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        setErrorMsg("Failed to load Razorpay Payment Gateway. Please check your internet connection.");
+        setSubmittingPayment(false);
+        setPaymentState("failed");
+        setPaymentProcessingMsg(null);
+        return;
+      }
+
+      // 4. Open Official Razorpay Checkout Modal
+      const razorpayKey = orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
       const options = {
-        key: data.razorpayKeyId,
-        amount: data.amount * 100,
-        currency: data.currency || "INR",
+        key: razorpayKey,
+        amount: orderData.amount, // in paise
+        currency: orderData.currency || "INR",
         name: "CGS Entertainments",
         description: `Event Registration - ${evt.title}`,
-        order_id: data.razorpayOrderId,
-        handler: function (response: any) {
-          triggerVerification(response);
-        },
+        order_id: orderData.orderId,
         prefill: {
           name: form.fullName,
           email: form.email,
@@ -484,28 +526,62 @@ export default function RegistrationPage() {
         theme: {
           color: "#6D28D9",
         },
+        handler: async function (response: any) {
+          setPaymentState("verifying");
+          setPaymentProcessingMsg("Verifying payment...");
+          try {
+            const verifyRes = await fetch("/api/payment/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                registrationId: data.registrationId,
+                razorpayOrderId: response.razorpay_order_id || orderData.orderId,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.success) {
+              router.push(`/registration-success?registrationId=${encodeURIComponent(data.registrationId)}`);
+            } else {
+              setPaymentState("failed");
+              setErrorMsg(verifyData.error || "Payment was not completed. Your registration has not been confirmed. Please try again.");
+              setSubmittingPayment(false);
+              setPaymentProcessingMsg(null);
+            }
+          } catch (vErr) {
+            console.error("Verification error:", vErr);
+            setPaymentState("failed");
+            setErrorMsg("Payment verification network error. Please try again.");
+            setSubmittingPayment(false);
+            setPaymentProcessingMsg(null);
+          }
+        },
         modal: {
           ondismiss: function () {
             setSubmittingPayment(false);
+            setPaymentProcessingMsg(null);
+            setPaymentState("cancelled");
           },
         },
       };
 
-      if (typeof (window as any).Razorpay !== "undefined") {
-        const rzp = new (window as any).Razorpay(options);
-        rzp.open();
-      } else {
-        // Direct simulation fallback if Razorpay script is not pre-loaded on window
-        await triggerVerification({
-          razorpay_order_id: data.razorpayOrderId,
-          razorpay_payment_id: `pay_sim_${Date.now()}`,
-          razorpay_signature: "simulated_signature",
-        });
-      }
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", function (resp: any) {
+        console.error("Razorpay Payment Failed Event:", resp.error);
+        setSubmittingPayment(false);
+        setPaymentProcessingMsg(null);
+        setPaymentState("failed");
+        setErrorMsg(resp.error?.description || "Payment was not completed. Your registration has not been confirmed. Please try again.");
+      });
+
+      rzp.open();
     } catch (err: any) {
       console.error("Registration error:", err);
       setErrorMsg("Network error during registration. Please check your connection.");
       setSubmittingPayment(false);
+      setPaymentState("failed");
+      setPaymentProcessingMsg(null);
     }
   };
 
@@ -1310,6 +1386,114 @@ export default function RegistrationPage() {
                   </div>
                 </div>
 
+                {/* Payment Cancelled Banner */}
+                {paymentState === "cancelled" && (
+                  <div
+                    style={{
+                      background: "#FFFBEB",
+                      border: "1.5px solid #FCD34D",
+                      borderRadius: 20,
+                      padding: "24px 28px",
+                      marginBottom: 20,
+                      boxShadow: "0 4px 16px rgba(245,158,11,0.1)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                      <AlertTriangle size={24} color="#D97706" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ fontSize: 18, fontWeight: 900, color: "#92400E", margin: "0 0 6px" }}>
+                          Payment Cancelled
+                        </h4>
+                        <p style={{ fontSize: 14, color: "#78350F", margin: "0 0 16px", lineHeight: 1.5 }}>
+                          Your payment was cancelled. You can try again whenever you're ready.
+                        </p>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentState("idle");
+                              setErrorMsg(null);
+                            }}
+                            style={{
+                              padding: "10px 20px",
+                              background: "#D97706",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: 10,
+                              fontSize: 13.5,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Try Again
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/events/${evt.slug || evt.id}`)}
+                            style={{
+                              padding: "10px 20px",
+                              background: "#fff",
+                              color: "#78350F",
+                              border: "1.5px solid #FCD34D",
+                              borderRadius: 10,
+                              fontSize: 13.5,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Back to Event
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Failed Banner */}
+                {paymentState === "failed" && (
+                  <div
+                    style={{
+                      background: "#FEF2F2",
+                      border: "1.5px solid #FCA5A5",
+                      borderRadius: 20,
+                      padding: "24px 28px",
+                      marginBottom: 20,
+                      boxShadow: "0 4px 16px rgba(239,68,68,0.1)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                      <AlertCircle size={24} color="#DC2626" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ fontSize: 18, fontWeight: 900, color: "#991B1B", margin: "0 0 6px" }}>
+                          Payment Failed
+                        </h4>
+                        <p style={{ fontSize: 14, color: "#7F1D1D", margin: "0 0 16px", lineHeight: 1.5 }}>
+                          {errorMsg || "Payment was not completed. Your registration has not been confirmed. Please try again."}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentState("idle");
+                            setErrorMsg(null);
+                          }}
+                          style={{
+                            padding: "10px 22px",
+                            background: "#DC2626",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 10,
+                            fontSize: 13.5,
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Final Payment Box */}
                 <div style={{ background: "#fff", border: "1.5px solid #C4B5FD", borderRadius: 22, padding: "28px 32px", boxShadow: "0 8px 32px rgba(109,40,217,0.1)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -1329,7 +1513,13 @@ export default function RegistrationPage() {
                     </div>
                   )}
 
-                  <PayNowBtn amount={feeDisplay} onClick={handleFinalPayment} disabled={isRegistrationClosed || videoUploading} loading={submittingPayment || videoUploading} />
+                  <PayNowBtn
+                    amount={feeDisplay}
+                    onClick={handleFinalPayment}
+                    disabled={isRegistrationClosed || videoUploading}
+                    loading={submittingPayment || videoUploading}
+                    loadingText={paymentProcessingMsg}
+                  />
 
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
                     <BackBtn onClick={goToPrevStep} />
