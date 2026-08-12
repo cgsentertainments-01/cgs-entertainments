@@ -1,3 +1,8 @@
+"use client";
+
+import React from "react";
+import { EventForm } from "@/components/events/EventForm";
+
 export default function AdminEventsCreatePage() {
-  return <div>Admin Events Create Page</div>;
+  return <EventForm mode="create" />;
 }

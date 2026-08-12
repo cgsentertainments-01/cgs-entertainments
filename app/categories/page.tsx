@@ -1,619 +1,749 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import {
+  Compass,
+  ChevronRight,
+  ArrowRight,
+  RefreshCw,
+  Sparkles,
+  Calendar,
+  MapPin,
+  Tag,
+  FolderOpen,
+} from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import {
-  User,
-  Users,
-  UserPlus,
-  Baby,
-  Smile,
-  Sparkles,
-  Flame,
-  Award,
-  Star,
-  Music,
-  MoreHorizontal,
-  ChevronRight,
-  CheckCircle2,
-  Heart,
-  Zap,
-} from "lucide-react";
+import { EventCard, EventType } from "@/components/events/EventCard";
 
-/* ─── DANCE STYLES DATA ─── */
-const DANCE_STYLES = [
-  { id: "classical", name: "Classical", icon: <Award size={24} color="#C084FC" /> },
-  { id: "folk", name: "Folk", icon: <Users size={24} color="#F472B6" /> },
-  { id: "western", name: "Western", icon: <Zap size={24} color="#60A5FA" /> },
-  { id: "hiphop", name: "Hip-Hop", icon: <Flame size={24} color="#FB923C" /> },
-  { id: "bollywood", name: "Bollywood", icon: <Sparkles size={24} color="#F43F5E" /> },
-  { id: "contemporary", name: "Contemporary", icon: <User size={24} color="#38BDF8" /> },
-  { id: "semiclassic", name: "Semi-Classical", icon: <Heart size={24} color="#2DD4BF" /> },
-  { id: "freestyle", name: "Freestyle", icon: <Star size={24} color="#FBBF24" /> },
-  { id: "fusion", name: "Fusion", icon: <Music size={24} color="#A78BFA" /> },
-  { id: "other", name: "Other", icon: <MoreHorizontal size={24} color="#9CA3AF" /> },
-];
+interface CategoryData {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  image?: string;
+  eventsCount?: number;
+}
 
-/* ─── HOVER COMPONENT: Competition Type Card ─── */
-function CompTypeCard({
-  card,
-  selected,
-  onClick,
-}: {
-  card: { id: string; title: string; desc: string; icon: React.ReactNode; iconBg: string };
-  selected: boolean;
-  onClick: () => void;
-}) {
-  const [h, setH] = useState(false);
+export default function CategoriesPage() {
+  const [categories, setCategories] = useState<CategoryData[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<boolean>(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
-  let transformVal = "translateY(0) scale(1)";
-  let shadowVal = "0 2px 10px rgba(0,0,0,0.03)";
-  if (h && selected) {
-    transformVal = "translateY(-8px) scale(1.03)";
-    shadowVal = "0 18px 40px rgba(109,40,217,0.28)";
-  } else if (h) {
-    transformVal = "translateY(-6px) scale(1.02)";
-    shadowVal = "0 14px 32px rgba(109,40,217,0.2)";
-  } else if (selected) {
-    transformVal = "translateY(-3px) scale(1.01)";
-    shadowVal = "0 8px 24px rgba(109,40,217,0.16)";
-  }
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(false);
+
+      const [catRes, evtRes] = await Promise.all([
+        fetch("/api/categories", { cache: "no-store" }),
+        fetch("/api/events?upcoming=true", { cache: "no-store" }),
+      ]);
+
+      if (!catRes.ok) throw new Error("Failed to load categories");
+
+      const catData = await catRes.json();
+      const loadedCategories: CategoryData[] = catData.categories || [];
+      setCategories(loadedCategories);
+
+      if (evtRes.ok) {
+        const evtData = await evtRes.json();
+        setEvents(evtData.events || []);
+      }
+    } catch (err) {
+      console.error("Error fetching category page data:", err);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Filter events based on selected category
+  const filteredEvents = events.filter((evt) => {
+    if (selectedCategory === "All") return true;
+    const catName = evt.category || evt.badge || evt.category_name || "";
+    const selectedObj = categories.find(
+      (c) => c.name.toLowerCase() === selectedCategory.toLowerCase() || c.slug.toLowerCase() === selectedCategory.toLowerCase()
+    );
+
+    const matchesName = catName.toLowerCase() === selectedCategory.toLowerCase();
+    const matchesSlug = selectedObj && catName.toLowerCase() === selectedObj.slug.toLowerCase();
+    const matchesId = selectedObj && evt.category_id && String(evt.category_id) === String(selectedObj.id);
+
+    return matchesName || matchesSlug || matchesId;
+  });
 
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        position: "relative",
-        background: h || selected ? "linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%)" : "#fff",
-        border: `2px solid ${h || selected ? "#6D28D9" : "#E5E7EB"}`,
-        borderRadius: 22,
-        padding: "24px",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        gap: 18,
-        boxShadow: shadowVal,
-        transform: transformVal,
-        transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-      }}
-    >
-      {selected && (
-        <div style={{ position: "absolute", top: 14, right: 14 }}>
-          <CheckCircle2 size={22} color="#6D28D9" />
-        </div>
-      )}
+    <div style={{ minHeight: "100vh", background: "#F9FAFB", color: "#111827" }}>
+      <Navbar />
 
-      <div
+      {/* ── 2. HERO SECTION (LIGHT THEME) ── */}
+      <section
         style={{
-          width: 58,
-          height: 58,
-          borderRadius: 18,
-          background: card.iconBg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          boxShadow: `0 8px 20px ${card.iconBg}44`,
-          transform: h ? "scale(1.15) rotate(-6deg)" : selected ? "scale(1.08)" : "scale(1)",
-          transition: "transform 0.25s ease",
+          position: "relative",
+          background: "linear-gradient(135deg, #F3E8FF 0%, #FAF5FF 50%, #EFF6FF 100%)",
+          paddingTop: 64,
+          overflow: "hidden",
+          borderBottom: "1px solid #E5E7EB",
         }}
       >
-        {card.icon}
+        {/* Soft Background Accent Orbs */}
+        <div
+          style={{
+            position: "absolute",
+            top: "-20%",
+            left: "15%",
+            width: "450px",
+            height: "450px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(167, 139, 250, 0.25) 0%, transparent 70%)",
+            filter: "blur(50px)",
+            pointerEvents: "none",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "10%",
+            right: "10%",
+            width: "350px",
+            height: "350px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(244, 114, 182, 0.2) 0%, transparent 70%)",
+            filter: "blur(60px)",
+            pointerEvents: "none",
+          }}
+        />
+
+        <div
+          style={{
+            maxWidth: 1280,
+            margin: "0 auto",
+            padding: "48px 32px 44px",
+            position: "relative",
+            zIndex: 10,
+            textAlign: "center",
+          }}
+        >
+          {/* Tagline Badge */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 16px",
+              borderRadius: 30,
+              background: "#FFFFFF",
+              border: "1.5px solid #DDD6FE",
+              color: "#6D28D9",
+              fontSize: 12.5,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              marginBottom: 14,
+              boxShadow: "0 4px 14px rgba(109, 40, 217, 0.12)",
+            }}
+          >
+            <Compass size={14} color="#6D28D9" />
+            <span>Event Discovery</span>
+          </div>
+
+          {/* Hero Main Heading */}
+          <h1
+            style={{
+              fontSize: 44,
+              fontWeight: 900,
+              color: "#111827",
+              margin: "0 0 12px",
+              letterSpacing: "-1px",
+              lineHeight: 1.15,
+            }}
+            className="cat-hero-title"
+          >
+            EXPLORE{" "}
+            <span
+              style={{
+                background: "linear-gradient(135deg, #6D28D9 0%, #9333EA 50%, #EC4899 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              EVENTS
+            </span>
+          </h1>
+
+          {/* Hero Subtitle */}
+          <p
+            style={{
+              fontSize: 16.5,
+              color: "#4B5563",
+              maxWidth: 620,
+              margin: "0 auto",
+              fontWeight: 500,
+              lineHeight: 1.5,
+            }}
+          >
+            Discover experiences, activities and events happening around you.
+          </p>
+        </div>
+      </section>
+
+      {/* ── 3. CATEGORY NAVIGATION (LIGHT THEME HORIZONTAL BAR) ── */}
+      <div
+        style={{
+          position: "sticky",
+          top: 60,
+          zIndex: 40,
+          background: "rgba(255, 255, 255, 0.92)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid #E5E7EB",
+          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.04)",
+        }}
+      >
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "14px 20px" }} className="cgs-main-container">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              overflowX: "auto",
+              paddingBottom: 4,
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+            }}
+            className="cat-scroll-nav"
+          >
+            {/* All Events Pill */}
+            <button
+              onClick={() => setSelectedCategory("All")}
+              style={{
+                padding: "9px 22px",
+                borderRadius: 30,
+                border: selectedCategory === "All" ? "1.5px solid #6D28D9" : "1.5px solid #E5E7EB",
+                background: selectedCategory === "All" ? "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)" : "#FFFFFF",
+                color: selectedCategory === "All" ? "#FFFFFF" : "#374151",
+                fontSize: 13.5,
+                fontWeight: 800,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                transition: "all 0.22s ease",
+                boxShadow: selectedCategory === "All" ? "0 4px 16px rgba(109, 40, 217, 0.3)" : "0 1px 3px rgba(0,0,0,0.05)",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <span>All Events</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: "2px 7px",
+                  borderRadius: 12,
+                  background: selectedCategory === "All" ? "rgba(255, 255, 255, 0.25)" : "#F3F4F6",
+                  color: selectedCategory === "All" ? "#FFF" : "#6B7280",
+                }}
+              >
+                {events.length}
+              </span>
+            </button>
+
+            {/* Dynamic Category Pills */}
+            {categories.map((cat) => {
+              const isSelected = selectedCategory.toLowerCase() === cat.name.toLowerCase();
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.name)}
+                  style={{
+                    padding: "9px 22px",
+                    borderRadius: 30,
+                    border: isSelected ? "1.5px solid #6D28D9" : "1.5px solid #E5E7EB",
+                    background: isSelected ? "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)" : "#FFFFFF",
+                    color: isSelected ? "#FFFFFF" : "#374151",
+                    fontSize: 13.5,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    transition: "all 0.22s ease",
+                    boxShadow: isSelected ? "0 4px 16px rgba(109, 40, 217, 0.3)" : "0 1px 3px rgba(0,0,0,0.05)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                  }}
+                >
+                  <span>{cat.name}</span>
+                  {typeof cat.eventsCount === "number" && cat.eventsCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        padding: "2px 7px",
+                        borderRadius: 12,
+                        background: isSelected ? "rgba(255, 255, 255, 0.25)" : "#F3F4F6",
+                        color: isSelected ? "#FFF" : "#6B7280",
+                      }}
+                    >
+                      {cat.eventsCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      <div>
-        <h3 style={{ fontSize: 19, fontWeight: 900, color: h || selected ? "#6D28D9" : "#111827", margin: "0 0 4px", transition: "color 0.2s" }}>
-          {card.title}
-        </h3>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: 0, fontWeight: 500, lineHeight: 1.4 }}>
-          {card.desc}
-        </p>
-      </div>
+      {/* ── MAIN CONTENT AREA ── */}
+      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "44px 32px 80px" }} className="cgs-main-container">
+
+        {/* ── ERROR STATE (LIGHT THEME) ── */}
+        {error && (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "60px 24px",
+              background: "#FFFFFF",
+              borderRadius: 24,
+              border: "1.5px solid #FCA5A5",
+              maxWidth: 520,
+              margin: "40px auto",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.04)",
+            }}
+          >
+            <div
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: "50%",
+                background: "#FEF2F2",
+                color: "#DC2626",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 18px",
+              }}
+            >
+              <RefreshCw size={26} />
+            </div>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: "#111827", margin: "0 0 8px" }}>
+              Unable to load categories
+            </h3>
+            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 22px" }}>
+              We encountered a connection issue. Please try again.
+            </p>
+            <button
+              onClick={fetchData}
+              style={{
+                padding: "11px 26px",
+                borderRadius: 12,
+                background: "linear-gradient(135deg, #6D28D9, #7C3AED)",
+                color: "#FFF",
+                border: "none",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                boxShadow: "0 4px 14px rgba(109, 40, 217, 0.3)",
+              }}
+            >
+              <RefreshCw size={15} /> Try Again
+            </button>
+          </div>
+        )}
+
+        {/* ── LOADING SKELETONS (LIGHT THEME) ── */}
+        {loading && !error && (
+          <div>
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ width: 220, height: 24, borderRadius: 8, background: "#E5E7EB" }} className="skeleton-pulse" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }} className="cat-grid-layout">
+              {[1, 2, 3, 4, 5, 6].map((idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    height: 280,
+                    borderRadius: 22,
+                    background: "#FFFFFF",
+                    border: "1.5px solid #E5E7EB",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.03)",
+                  }}
+                  className="skeleton-pulse"
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── CATEGORY SHOWCASE & CARDS (LIGHT THEME) ── */}
+        {!loading && !error && (
+          <>
+            {/* Section Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+              <div>
+                <h2 style={{ fontSize: 24, fontWeight: 900, color: "#111827", margin: "0 0 4px", letterSpacing: -0.4 }}>
+                  {selectedCategory === "All" ? "Featured Event Categories" : `${selectedCategory} Showcase`}
+                </h2>
+                <p style={{ fontSize: 14, color: "#6B7280", margin: 0, fontWeight: 500 }}>
+                  Select a category to explore live stage and talent competitions.
+                </p>
+              </div>
+
+              {selectedCategory !== "All" && (
+                <button
+                  onClick={() => setSelectedCategory("All")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#6D28D9",
+                    fontSize: 13.5,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Show All Categories →
+                </button>
+              )}
+            </div>
+
+            {/* ── 5, 6, 7, 8. CATEGORY CARDS EDITORIAL GRID (LIGHT THEME) ── */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 24,
+                marginBottom: 60,
+              }}
+              className="cat-grid-layout"
+            >
+              {categories
+                .filter((cat) => selectedCategory === "All" || cat.name.toLowerCase() === selectedCategory.toLowerCase())
+                .map((cat, idx) => (
+                  <CategoryCardLight
+                    key={cat.id}
+                    category={cat}
+                    isSelected={selectedCategory.toLowerCase() === cat.name.toLowerCase()}
+                    onSelect={() => setSelectedCategory(cat.name)}
+                    isLargeFeatured={selectedCategory === "All" && idx < 2}
+                  />
+                ))}
+            </div>
+
+            {/* ── 10. SHOW EVENTS IN CATEGORY (LIGHT THEME) ── */}
+            <div style={{ paddingTop: 16, borderTop: "1px solid #E5E7EB" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+                <div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      color: "#6D28D9",
+                      textTransform: "uppercase",
+                      letterSpacing: 1.2,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Calendar size={13} color="#6D28D9" />
+                    <span>Upcoming Events</span>
+                  </div>
+                  <h2 style={{ fontSize: 26, fontWeight: 900, color: "#111827", margin: 0, letterSpacing: -0.5 }}>
+                    {selectedCategory === "All"
+                      ? "Upcoming Competition Events"
+                      : `Upcoming ${selectedCategory} Events`}
+                  </h2>
+                </div>
+
+                <Link
+                  href={selectedCategory === "All" ? "/events" : `/events?category=${encodeURIComponent(selectedCategory)}`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: "#6D28D9",
+                    fontSize: 13.5,
+                    fontWeight: 800,
+                    textDecoration: "none",
+                  }}
+                >
+                  View All Events <ChevronRight size={16} />
+                </Link>
+              </div>
+
+              {/* ── 13. EMPTY CATEGORY STATE (LIGHT THEME) ── */}
+              {filteredEvents.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "60px 24px",
+                    background: "#FFFFFF",
+                    borderRadius: 22,
+                    border: "1.5px dashed #CBD5E1",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.02)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: "50%",
+                      background: "#F3E8FF",
+                      color: "#6D28D9",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 16px",
+                    }}
+                  >
+                    <FolderOpen size={26} />
+                  </div>
+                  <h3 style={{ fontSize: 19, fontWeight: 800, color: "#111827", margin: "0 0 6px" }}>
+                    No upcoming events in {selectedCategory}
+                  </h3>
+                  <p style={{ fontSize: 13.5, color: "#6B7280", margin: "0 0 20px" }}>
+                    Check back soon or explore other categories for active competitions.
+                  </p>
+                  <button
+                    onClick={() => setSelectedCategory("All")}
+                    style={{
+                      padding: "11px 24px",
+                      borderRadius: 12,
+                      background: "linear-gradient(135deg, #6D28D9, #7C3AED)",
+                      color: "#FFF",
+                      border: "none",
+                      fontSize: 13.5,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 4px 14px rgba(109, 40, 217, 0.25)",
+                    }}
+                  >
+                    Explore All Events <ArrowRight size={15} />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 22,
+                  }}
+                  className="cat-events-grid"
+                >
+                  {filteredEvents.map((evt) => (
+                    <EventCard key={evt.id} evt={evt} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </main>
+
+      <Footer />
+
+      <style>{`
+        .cat-scroll-nav::-webkit-scrollbar {
+          display: none;
+        }
+        .skeleton-pulse {
+          animation: pulse 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse {
+          0% { opacity: 0.7; }
+          50% { opacity: 0.3; }
+          100% { opacity: 0.7; }
+        }
+        @media (max-width: 1024px) {
+          .cat-grid-layout { grid-template-columns: repeat(2, 1fr) !important; }
+          .cat-events-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+        @media (max-width: 640px) {
+          .cat-grid-layout { grid-template-columns: 1fr !important; }
+          .cat-events-grid { grid-template-columns: 1fr !important; }
+          .cat-hero-title { font-size: 32px !important; }
+        }
+      `}</style>
     </div>
   );
 }
 
-/* ─── HOVER COMPONENT: Age Category Card ─── */
-function AgeCategoryCard({
-  card,
-  selected,
-  onClick,
+/* ── 5, 6, 7. LIGHT THEME CATEGORY CARD COMPONENT ── */
+function CategoryCardLight({
+  category,
+  isSelected,
+  onSelect,
+  isLargeFeatured = false,
 }: {
-  card: { id: string; title: string; range: string; sub: string; accent: string; icon: React.ReactNode };
-  selected: boolean;
-  onClick: () => void;
+  category: CategoryData;
+  isSelected: boolean;
+  onSelect: () => void;
+  isLargeFeatured?: boolean;
 }) {
-  const [h, setH] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
-  let transformVal = "translateY(0) scale(1)";
-  let shadowVal = "0 2px 8px rgba(0,0,0,0.03)";
-  if (h && selected) {
-    transformVal = "translateY(-9px) scale(1.035)";
-    shadowVal = `0 18px 40px ${card.accent}45`;
-  } else if (h) {
-    transformVal = "translateY(-7px) scale(1.025)";
-    shadowVal = `0 14px 32px ${card.accent}35`;
-  } else if (selected) {
-    transformVal = "translateY(-3px) scale(1.01)";
-    shadowVal = `0 8px 22px ${card.accent}25`;
-  }
+  const fallbackImg =
+    "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=85";
+  const displayImage = imgError || !category.image ? fallbackImg : category.image;
 
   return (
     <div
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         position: "relative",
-        background: h || selected ? "linear-gradient(180deg, #FFFFFF 0%, #FAFAFA 100%)" : "#fff",
-        border: `2px solid ${h || selected ? card.accent : "#E5E7EB"}`,
-        borderRadius: 20,
-        padding: "24px 14px 20px",
+        height: isLargeFeatured ? 310 : 260,
+        borderRadius: 22,
+        overflow: "hidden",
         cursor: "pointer",
+        background: "#FFFFFF",
+        border: isSelected
+          ? "2.5px solid #6D28D9"
+          : hovered
+          ? "2px solid #8B5CF6"
+          : "1.5px solid #E5E7EB",
+        boxShadow: hovered
+          ? "0 18px 42px rgba(109, 40, 217, 0.22), 0 4px 12px rgba(0, 0, 0, 0.05)"
+          : isSelected
+          ? "0 8px 24px rgba(109, 40, 217, 0.16)"
+          : "0 2px 10px rgba(0, 0, 0, 0.04)",
+        transform: hovered ? "translateY(-7px)" : "translateY(0)",
+        transition: "all 0.32s cubic-bezier(0.16, 1, 0.3, 1)",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        textAlign: "center",
-        overflow: "hidden",
-        boxShadow: shadowVal,
-        transform: transformVal,
-        transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        justifyContent: "flex-end",
       }}
+      onClick={onSelect}
     >
-      {/* Top Colored Bar Accent */}
-      <div
+      {/* Category Image */}
+      <Image
+        src={displayImage}
+        alt={category.name}
+        fill
+        sizes="(max-width:768px) 100vw, 33vw"
+        onError={() => setImgError(true)}
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: h ? 7 : selected ? 5 : 4,
-          background: card.accent,
-          boxShadow: h || selected ? `0 2px 10px ${card.accent}` : "none",
-          transition: "all 0.25s ease",
+          objectFit: "cover",
+          objectPosition: "center",
+          transform: hovered ? "scale(1.07)" : "scale(1)",
+          transition: "transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       />
 
+      {/* Subtle Overlay Gradient for Text Contrast */}
       <div
         style={{
-          width: 50,
-          height: 50,
-          borderRadius: "50%",
-          background: `${card.accent}18`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: 14,
-          transform: h ? "scale(1.28) rotate(-10deg)" : selected ? "scale(1.15)" : "scale(1) rotate(0deg)",
-          transition: "transform 0.25s ease",
+          position: "absolute",
+          inset: 0,
+          background: hovered
+            ? "linear-gradient(180deg, rgba(15, 23, 42, 0.05) 0%, rgba(15, 23, 42, 0.65) 50%, rgba(15, 23, 42, 0.94) 100%)"
+            : "linear-gradient(180deg, rgba(15, 23, 42, 0.05) 0%, rgba(15, 23, 42, 0.55) 50%, rgba(15, 23, 42, 0.88) 100%)",
+          transition: "background 0.32s ease",
+          pointerEvents: "none",
         }}
-      >
-        {card.icon}
-      </div>
+      />
 
-      <h3 style={{ fontSize: 16, fontWeight: 900, color: "#111827", margin: "0 0 2px" }}>
-        {card.title}
-      </h3>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: card.accent, marginBottom: 8 }}>
-        {card.range}
-      </div>
-      <p style={{ fontSize: 11.5, color: "#6B7280", margin: 0, fontWeight: 500, lineHeight: 1.35 }}>
-        {card.sub}
-      </p>
-    </div>
-  );
-}
+      {/* Top Event Count Pill */}
+      {typeof category.eventsCount === "number" && category.eventsCount > 0 && (
+        <div style={{ position: "absolute", top: 14, right: 14, zIndex: 10 }}>
+          <span
+            style={{
+              padding: "4px 11px",
+              borderRadius: 20,
+              background: "rgba(255, 255, 255, 0.9)",
+              border: "1px solid rgba(255, 255, 255, 0.6)",
+              color: "#1E1B4B",
+              fontSize: 11,
+              fontWeight: 800,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            {category.eventsCount} {category.eventsCount === 1 ? "Event" : "Events"}
+          </span>
+        </div>
+      )}
 
-/* ─── HOVER COMPONENT: Dance Style Neon Card ─── */
-function DanceStyleNeonCard({
-  style,
-  selected,
-  onClick,
-}: {
-  style: { id: string; name: string; icon: React.ReactNode };
-  selected: boolean;
-  onClick: () => void;
-}) {
-  const [h, setH] = useState(false);
-
-  let transformVal = "translateY(0) scale(1)";
-  let shadowVal = "none";
-  if (h && selected) {
-    transformVal = "translateY(-8px) scale(1.07)";
-    shadowVal = "0 14px 38px rgba(167, 139, 250, 0.6), 0 0 22px rgba(167, 139, 250, 0.4)";
-  } else if (h) {
-    transformVal = "translateY(-6px) scale(1.05)";
-    shadowVal = "0 10px 30px rgba(167, 139, 250, 0.45), 0 0 16px rgba(167, 139, 250, 0.25)";
-  } else if (selected) {
-    transformVal = "translateY(-2px) scale(1.02)";
-    shadowVal = "0 6px 20px rgba(167, 139, 250, 0.3)";
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        background: h || selected
-          ? "linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)"
-          : "linear-gradient(135deg, #0F0A28 0%, #1A0E38 100%)",
-        border: `1.5px solid ${h || selected ? "#A78BFA" : "rgba(255,255,255,0.12)"}`,
-        borderRadius: 16,
-        padding: "18px 8px",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        boxShadow: shadowVal,
-        transform: transformVal,
-        transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-      }}
-    >
-      <div style={{ transform: h ? "scale(1.3) rotate(6deg)" : selected ? "scale(1.18)" : "scale(1)", transition: "transform 0.25s ease" }}>
-        {style.icon}
-      </div>
-      <span style={{ fontSize: 12, fontWeight: 800, color: h || selected ? "#fff" : "#D1D5DB", textAlign: "center" }}>
-        {style.name}
-      </span>
-    </div>
-  );
-}
-
-/* ─── HOVER COMPONENT: CTA Contact Button ─── */
-function CtaContactBtn() {
-  const [h, setH] = useState(false);
-  return (
-    <Link
-      href="/contact"
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "14px 32px",
-        borderRadius: 14,
-        background: h
-          ? "linear-gradient(135deg, #5B21B6 0%, #6D28D9 100%)"
-          : "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)",
-        color: "#fff",
-        fontSize: 14.5,
-        fontWeight: 800,
-        textDecoration: "none",
-        boxShadow: h
-          ? "0 10px 32px rgba(109, 40, 217, 0.45)"
-          : "0 6px 20px rgba(109, 40, 217, 0.32)",
-        whiteSpace: "nowrap",
-        flexShrink: 0,
-        transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        transform: h ? "translateY(-3px) scale(1.04)" : "translateY(0) scale(1)",
-      }}
-    >
-      Contact Us
-      <ChevronRight size={17} style={{ transform: h ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
-    </Link>
-  );
-}
-
-/* ─── MAIN PAGE ─── */
-export default function CategoriesPage() {
-  const [selectedCompType, setSelectedCompType] = useState<string>("solo");
-  const [selectedAgeCat, setSelectedAgeCat] = useState<string>("teens");
-  const [selectedStyle, setSelectedStyle] = useState<string>("bollywood");
-
-  return (
-    <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
-      <Navbar />
-
-      {/* ── Top Hero Banner matching Reference ── */}
+      {/* Card Content Area */}
       <div
         style={{
           position: "relative",
-          background: "linear-gradient(135deg, #090314 0%, #150933 50%, #251052 100%)",
-          paddingTop: 64,
-          overflow: "hidden",
+          zIndex: 10,
+          padding: "22px 20px 18px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
         }}
       >
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "44px 32px 52px", position: "relative", zIndex: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 480px", gap: 32, alignItems: "center" }} className="cat-hero-grid">
-            <div>
-              <span
-                style={{
-                  padding: "5px 14px",
-                  borderRadius: 20,
-                  background: "rgba(167, 139, 250, 0.18)",
-                  color: "#C4B5FD",
-                  fontSize: 12,
-                  fontWeight: 800,
-                  letterSpacing: 0.8,
-                  textTransform: "uppercase",
-                  border: "1px solid rgba(167, 139, 250, 0.3)",
-                  display: "inline-block",
-                  marginBottom: 14,
-                }}
-              >
-                Explore All
-              </span>
-              <h1 style={{ fontSize: 44, fontWeight: 900, color: "#fff", margin: "0 0 12px", letterSpacing: -1, lineHeight: 1.15 }}>
-                Competition <span style={{ background: "linear-gradient(135deg, #F43F5E, #FB923C)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Categories</span>
-              </h1>
-              <p style={{ fontSize: 16, color: "#C4B5FD", margin: "0 0 6px", fontWeight: 500 }}>
-                Find the perfect category that matches your talent.
-              </p>
-              <p style={{ fontSize: 16, color: "#E0E7FF", margin: 0, fontWeight: 700 }}>
-                Step on stage and shine!
-              </p>
-            </div>
+        <h3
+          style={{
+            fontSize: isLargeFeatured ? 25 : 21,
+            fontWeight: 900,
+            color: "#FFFFFF",
+            margin: 0,
+            letterSpacing: "-0.4px",
+            lineHeight: 1.2,
+            textShadow: "0 2px 8px rgba(0,0,0,0.5)",
+          }}
+        >
+          {category.name}
+        </h3>
 
-            {/* Right Hero Image — Professional Action Stage Dancer */}
-            <div style={{ position: "relative", height: 260, borderRadius: 22, overflow: "hidden", boxShadow: "0 16px 40px rgba(0,0,0,0.5)" }}>
-              <Image
-                src="https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=90"
-                alt="Dance Stage Performer"
-                fill
-                priority
-                style={{ objectFit: "cover", objectPosition: "center" }}
-              />
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, #090314 0%, transparent 60%)" }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Main Category Content ── */}
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "44px 32px 64px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
-
-          {/* ── SECTION 01: Competition Type ── */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  background: "#6D28D9",
-                  color: "#fff",
-                  fontSize: 13.5,
-                  fontWeight: 900,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 4px 14px rgba(109,40,217,0.35)",
-                }}
-              >
-                01
-              </div>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#111827", margin: 0 }}>
-                Competition Type
-              </h2>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }} className="type-cards-grid">
-              {[
-                {
-                  id: "solo",
-                  title: "Solo",
-                  desc: "Individual performance, one participant.",
-                  icon: <User size={26} color="#fff" />,
-                  iconBg: "#6D28D9",
-                },
-                {
-                  id: "duo",
-                  title: "Duo",
-                  desc: "Two participants perform together.",
-                  icon: <UserPlus size={26} color="#fff" />,
-                  iconBg: "#D946EF",
-                },
-                {
-                  id: "group",
-                  title: "Group",
-                  desc: "Three or more participants perform together.",
-                  icon: <Users size={26} color="#fff" />,
-                  iconBg: "#F97316",
-                },
-              ].map((card) => (
-                <CompTypeCard
-                  key={card.id}
-                  card={card}
-                  selected={selectedCompType === card.id}
-                  onClick={() => setSelectedCompType(card.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* ── SECTION 02: Age Categories ── */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  background: "#6D28D9",
-                  color: "#fff",
-                  fontSize: 13.5,
-                  fontWeight: 900,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 4px 14px rgba(109,40,217,0.35)",
-                }}
-              >
-                02
-              </div>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#111827", margin: 0 }}>
-                Age Categories
-              </h2>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 14 }} className="age-cards-grid">
-              {[
-                {
-                  id: "tiny-tots",
-                  title: "Tiny Tots",
-                  range: "3 – 5 Years",
-                  sub: "Little stars taking the first step.",
-                  accent: "#8B5CF6",
-                  icon: <Baby size={24} color="#8B5CF6" />,
-                },
-                {
-                  id: "kids",
-                  title: "Kids",
-                  range: "6 – 9 Years",
-                  sub: "Young talent with big dreams.",
-                  accent: "#3B82F6",
-                  icon: <Smile size={24} color="#3B82F6" />,
-                },
-                {
-                  id: "juniors",
-                  title: "Juniors",
-                  range: "10 – 13 Years",
-                  sub: "Passionate performers in action.",
-                  accent: "#10B981",
-                  icon: <Sparkles size={24} color="#10B981" />,
-                },
-                {
-                  id: "teens",
-                  title: "Teens",
-                  range: "14 – 17 Years",
-                  sub: "Energetic, dynamic and fearless.",
-                  accent: "#F97316",
-                  icon: <Flame size={24} color="#F97316" />,
-                },
-                {
-                  id: "seniors",
-                  title: "Seniors",
-                  range: "18+ Years",
-                  sub: "Experience meets excellence.",
-                  accent: "#EC4899",
-                  icon: <User size={24} color="#EC4899" />,
-                },
-                {
-                  id: "open",
-                  title: "Open Category",
-                  range: "All Ages",
-                  sub: "Open to all age groups.",
-                  accent: "#F59E0B",
-                  icon: <Star size={24} color="#F59E0B" />,
-                },
-              ].map((card) => (
-                <AgeCategoryCard
-                  key={card.id}
-                  card={card}
-                  selected={selectedAgeCat === card.id}
-                  onClick={() => setSelectedAgeCat(card.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* ── SECTION 03: Dance Styles (Neon Icons) ── */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  background: "#6D28D9",
-                  color: "#fff",
-                  fontSize: 13.5,
-                  fontWeight: 900,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 4px 14px rgba(109,40,217,0.35)",
-                }}
-              >
-                03
-              </div>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#111827", margin: 0 }}>
-                Dance Styles
-              </h2>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 12 }} className="styles-grid-10">
-              {DANCE_STYLES.map((style) => (
-                <DanceStyleNeonCard
-                  key={style.id}
-                  style={style}
-                  selected={selectedStyle === style.id}
-                  onClick={() => setSelectedStyle(style.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* ── Bottom CTA Banner ── */}
-          <div
+        {category.description && (
+          <p
             style={{
-              background: "linear-gradient(135deg, #0B041C 0%, #1A0C3B 50%, #2A105C 100%)",
-              borderRadius: 24,
-              padding: "26px 36px",
-              boxShadow: "0 12px 40px rgba(15,10,40,0.45)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 20,
+              fontSize: 12.5,
+              color: "#E2E8F0",
+              margin: 0,
+              fontWeight: 500,
+              lineHeight: 1.35,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
             }}
-            className="cat-cta-bar"
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  background: "rgba(251, 191, 36, 0.18)",
-                  border: "1px solid rgba(251, 191, 36, 0.35)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Star size={28} color="#FBBF24" fill="#FBBF24" />
-              </div>
-              <div>
-                <h3 style={{ fontSize: 18, fontWeight: 900, color: "#fff", margin: "0 0 4px" }}>
-                  Can&apos;t find the right category?
-                </h3>
-                <p style={{ fontSize: 13.5, color: "#C4B5FD", margin: 0, fontWeight: 500 }}>
-                  Contact us and we will help you find the perfect competition for you.
-                </p>
-              </div>
-            </div>
+            {category.description}
+          </p>
+        )}
 
-            <CtaContactBtn />
-          </div>
-
+        {/* Explore Events Link */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            marginTop: 6,
+            fontSize: 12.5,
+            fontWeight: 800,
+            color: hovered ? "#F472B6" : "#E9D5FF",
+            transition: "color 0.25s ease",
+          }}
+        >
+          <span>Explore events</span>
+          <ArrowRight
+            size={14}
+            style={{
+              transform: hovered ? "translateX(6px)" : "translateX(0)",
+              transition: "transform 0.3s ease",
+            }}
+          />
         </div>
       </div>
-
-      <style>{`
-        @media (max-width: 1024px) {
-          .cat-hero-grid { grid-template-columns: 1fr !important; }
-          .age-cards-grid { grid-template-columns: repeat(3, 1fr) !important; }
-          .styles-grid-10 { grid-template-columns: repeat(5, 1fr) !important; }
-        }
-        @media (max-width: 640px) {
-          .type-cards-grid { grid-template-columns: 1fr !important; }
-          .age-cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .styles-grid-10 { grid-template-columns: repeat(3, 1fr) !important; }
-          .cat-cta-bar { flex-direction: column !important; align-items: flex-start !important; }
-        }
-      `}</style>
-      <Footer />
     </div>
   );
 }

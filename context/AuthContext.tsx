@@ -1,15 +1,16 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { AuthContextType } from "@/types/auth";
+import { AuthContextType, AdminProfile } from "@/types/auth";
 import { useRouter } from "next/navigation";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -17,28 +18,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
+  // Helper to fetch matching admin profile from public.admins
+  const fetchAdminProfile = useCallback(
+    async (authUser: User | null): Promise<AdminProfile | null> => {
+      if (!authUser) {
+        setAdminProfile(null);
+        return null;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("admins")
+          .select("*")
+          .or(`auth_user_id.eq.${authUser.id},id.eq.${authUser.id},email.eq.${authUser.email}`)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("Notice: Querying public.admins profile:", error.message);
+        }
+
+        if (data) {
+          const profile: AdminProfile = {
+            id: data.id,
+            auth_user_id: data.auth_user_id,
+            name: data.name || authUser.user_metadata?.full_name || authUser.email || "Admin",
+            email: data.email || authUser.email || "",
+            phone: data.phone,
+            role: data.role || "admin",
+            avatar: data.avatar || authUser.user_metadata?.avatar_url,
+            is_active: Boolean(data.is_active),
+            last_login: data.last_login,
+          };
+          setAdminProfile(profile);
+          return profile;
+        } else {
+          setAdminProfile(null);
+          return null;
+        }
+      } catch (err) {
+        console.error("Failed to fetch admin profile:", err);
+        setAdminProfile(null);
+        return null;
+      }
+    },
+    [supabase]
+  );
+
+  const refreshAdminProfile = useCallback(async () => {
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    return await fetchAdminProfile(currentUser);
+  }, [supabase, fetchAdminProfile]);
+
   useEffect(() => {
     // 1. Get initial session
     const getInitialSession = async () => {
       try {
-        const storedAdmin = typeof window !== "undefined" ? sessionStorage.getItem("cgs_admin_session") : null;
-        if (storedAdmin === "true") {
-          const adminUser = {
-            id: "cgs-admin-user",
-            email: "cgsentertainments01@gmail.com",
-            user_metadata: { full_name: "Admin CGS" },
-            app_metadata: { provider: "email" },
-            aud: "authenticated",
-            role: "authenticated",
-            created_at: new Date().toISOString(),
-          } as unknown as User;
-          setUser(adminUser);
+        const {
+          data: { session: initialSession },
+        } = await supabase.auth.getSession();
+        setSession(initialSession);
+        setUser(initialSession?.user ?? null);
+        if (initialSession?.user) {
+          await fetchAdminProfile(initialSession.user);
         } else {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          setSession(session);
-          setUser(session?.user ?? null);
+          setAdminProfile(null);
         }
       } catch (err) {
         console.error("Error fetching initial session:", err);
@@ -49,25 +94,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     getInitialSession();
 
-    // 2. Listen to Auth state changes cleanly without triggering page re-fetches
+    // 2. Listen to Auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      const storedAdmin = typeof window !== "undefined" ? sessionStorage.getItem("cgs_admin_session") : null;
-      if (storedAdmin === "true") {
-        const adminUser = {
-          id: "cgs-admin-user",
-          email: "cgsentertainments01@gmail.com",
-          user_metadata: { full_name: "Admin CGS" },
-          app_metadata: { provider: "email" },
-          aud: "authenticated",
-          role: "authenticated",
-          created_at: new Date().toISOString(),
-        } as unknown as User;
-        setUser(adminUser);
+    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession);
+      const authUser = currentSession?.user ?? null;
+      setUser(authUser);
+
+      if (authUser) {
+        await fetchAdminProfile(authUser);
       } else {
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
+        setAdminProfile(null);
       }
       setLoading(false);
     });
@@ -75,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [supabase, fetchAdminProfile]);
 
   // Google OAuth Trigger
   const signInWithGoogle = async () => {
@@ -96,42 +134,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Email Sign In
+  // Email Sign In with Supabase Auth + Admin Authorization
   const signInWithEmail = async (email: string, password: string) => {
     const cleanEmail = email.trim().toLowerCase();
 
-    if (cleanEmail === "cgsentertainments01@gmail.com" && password === "Cgsentertainments@88112") {
-      const adminUser = {
-        id: "cgs-admin-user",
-        email: "cgsentertainments01@gmail.com",
-        user_metadata: { full_name: "Admin CGS" },
-        app_metadata: { provider: "email" },
-        aud: "authenticated",
-        role: "authenticated",
-        created_at: new Date().toISOString(),
-      } as unknown as User;
-
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("cgs_admin_session", "true");
-        document.cookie = "cgs_admin_auth=true; path=/; max-age=86400;";
-      }
-
-      setUser(adminUser);
-
-      try {
-        await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-      } catch (e) {
-        // Ignore Supabase error if admin credentials match
-      }
-
-      return { error: null };
-    }
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
+    // 1. Supabase Authentication
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
       password,
     });
-    return { error };
+
+    if (authError || !authData.user) {
+      return { error: authError || new Error("Authentication failed."), adminCode: undefined };
+    }
+
+    // 2. Query public.admins profile
+    const profile = await fetchAdminProfile(authData.user);
+
+    if (!profile) {
+      return {
+        error: new Error("Your account is authenticated but is not authorized as an administrator. Please contact the system administrator."),
+        adminCode: "not_found" as const,
+      };
+    }
+
+    if (!profile.is_active) {
+      return {
+        error: new Error("Your admin account is inactive. Please contact the system administrator."),
+        adminCode: "inactive" as const,
+      };
+    }
+
+    // Update last_login timestamp in background if column exists
+    try {
+      await supabase
+        .from("admins")
+        .update({ last_login: new Date().toISOString() })
+        .eq("id", profile.id);
+    } catch {
+      // Ignore background timestamp update error
+    }
+
+    return { error: null, adminCode: "ok" as const };
   };
 
   // Email Sign Up
@@ -157,14 +201,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Sign Out
   const signOut = async () => {
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("cgs_admin_session");
-      document.cookie = "cgs_admin_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
-    }
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
-    router.push("/");
+    setAdminProfile(null);
+    router.push("/admin/login");
   };
 
   // Reset Password for Email
@@ -197,10 +238,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
+  const isAdmin = Boolean(user && adminProfile && adminProfile.is_active === true);
+
   return (
     <AuthContext.Provider
       value={{
         user,
+        adminProfile,
+        isAdmin,
         session,
         loading,
         signInWithGoogle,
@@ -210,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetPasswordForEmail,
         updatePassword,
         resendConfirmationEmail,
+        refreshAdminProfile,
       }}
     >
       {children}
@@ -224,3 +270,4 @@ export function useAuth() {
   }
   return context;
 }
+

@@ -6,8 +6,8 @@ import { Instagram, Youtube, MessageCircle } from "lucide-react";
 
 export function Footer() {
   return (
-    <footer style={{ background: "#1E1B4B", color: "#C4B5FD", padding: "48px 0 24px" }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px" }}>
+    <footer style={{ background: "#1E1B4B", color: "#C4B5FD", padding: "48px 0 24px" }} className="cgs-footer">
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px" }} className="cgs-main-container">
         <div
           style={{
             display: "grid",
@@ -226,6 +226,9 @@ export function Footer() {
           transform: translateY(-2px) scale(1.05);
         }
         @media (max-width: 800px) { .footer-cols { grid-template-columns: 1fr 1fr !important; } }
+        @media (max-width: 767px) {
+          .cgs-footer { padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px)) !important; }
+        }
         @media (max-width: 480px) { .footer-cols { grid-template-columns: 1fr !important; } }
       `}</style>
     </footer>

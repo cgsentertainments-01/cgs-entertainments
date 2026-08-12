@@ -9,12 +9,11 @@ export const MOCK_BANNERS: Banner[] = [
     subtitle: "CGS ENTERTAINMENTS",
     description: "Show Your Talent. Shine On Stage. Be A Star!",
     button_text: "Register Now",
-    button_url: "/events",
-    event_date: "20 - 22 March, 2026",
-    location: "Hyderabad, Telangana",
-    desktop_image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1920&q=80",
-    status: "active",
-    priority: 1,
+    link_url: "/events",
+    image_url: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1920&q=80",
+    banner_type: "hero",
+    is_active: true,
+    display_order: 1,
   },
   {
     id: "banner-2",
@@ -22,14 +21,14 @@ export const MOCK_BANNERS: Banner[] = [
     subtitle: "CGS ENTERTAINMENTS",
     description: "Walk the Ramp of Excellence & Glamour",
     button_text: "Explore Events",
-    button_url: "/categories",
-    event_date: "15 - 18 April, 2026",
-    location: "Bangalore, Karnataka",
-    desktop_image: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1920&q=80",
-    status: "active",
-    priority: 2,
+    link_url: "/categories",
+    image_url: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1920&q=80",
+    banner_type: "hero",
+    is_active: true,
+    display_order: 2,
   },
 ];
+
 
 export const MOCK_CATEGORIES: Category[] = [
   {
@@ -104,52 +103,7 @@ export const MOCK_CATEGORIES: Category[] = [
   },
 ];
 
-export const MOCK_EVENTS: Event[] = [
-  {
-    id: "evt-1",
-    title: "National Dance Championship",
-    slug: "national-dance-championship",
-    banner_url: "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=80",
-    event_date: "25 May 2026",
-    location: "Hyderabad",
-    category_name: "DANCE",
-    registration_fee: 499,
-    status: "published",
-  },
-  {
-    id: "evt-2",
-    title: "Elite Modeling Show",
-    slug: "elite-modeling-show",
-    banner_url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=800&q=80",
-    event_date: "10 June 2026",
-    location: "Bangalore",
-    category_name: "MODELING",
-    registration_fee: 799,
-    status: "published",
-  },
-  {
-    id: "evt-3",
-    title: "Acting Excellence Awards",
-    slug: "acting-excellence-awards",
-    banner_url: "https://images.unsplash.com/photo-1469488865564-c2de10f69f96?auto=format&fit=crop&w=800&q=80",
-    event_date: "18 June 2026",
-    location: "Chennai",
-    category_name: "ACTING",
-    registration_fee: 399,
-    status: "published",
-  },
-  {
-    id: "evt-4",
-    title: "Voice of India 2026",
-    slug: "voice-of-india-2026",
-    banner_url: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80",
-    event_date: "30 June 2026",
-    location: "Mumbai",
-    category_name: "SINGING",
-    registration_fee: 599,
-    status: "published",
-  },
-];
+export const MOCK_EVENTS: Event[] = [];
 
 export const MOCK_STATS: StatItem[] = [
   { id: "s1", label: "Events Organized", count: 150, suffix: "+", icon_name: "Trophy" },
@@ -173,21 +127,39 @@ export const MOCK_SETTINGS: WebsiteSettings = {
   },
 };
 
-// API Functions
 export async function getBanners(): Promise<Banner[]> {
-  if (!isSupabaseConfigured()) return MOCK_BANNERS;
   try {
-    const { data, error } = await supabase
-      .from("banners")
-      .select("*")
-      .eq("status", "active")
-      .order("priority", { ascending: true });
-
-    if (error || !data || data.length === 0) return MOCK_BANNERS;
-    return data as Banner[];
+    const res = await fetch("/api/banners?mode=public", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.banners && data.banners.length > 0) {
+        return data.banners as Banner[];
+      }
+    }
   } catch {
-    return MOCK_BANNERS;
+    // Fallback to direct client query if fetch fails
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("banners")
+        .select("*")
+        .eq("is_active", true)
+        .or(`start_date.is.null,start_date.lte.${nowIso}`)
+        .or(`end_date.is.null,end_date.gte.${nowIso}`)
+        .order("display_order", { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        return data as Banner[];
+      }
+    } catch {
+      // Fallback to MOCK_BANNERS if error
+    }
+  }
+
+  return MOCK_BANNERS;
 }
 
 export async function getCategories(): Promise<Category[]> {
@@ -207,19 +179,31 @@ export async function getCategories(): Promise<Category[]> {
 }
 
 export async function getEvents(): Promise<Event[]> {
-  if (!isSupabaseConfigured()) return MOCK_EVENTS;
   try {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .eq("status", "published")
-      .order("created_at", { ascending: false });
-
-    if (error || !data || data.length === 0) return MOCK_EVENTS;
-    return data as Event[];
+    const res = await fetch("/api/events?upcoming=true", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      return (data.events || []) as Event[];
+    }
   } catch {
-    return MOCK_EVENTS;
+    // Return empty array if error occurs - no hardcoded fallback
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .eq("is_published", true)
+        .order("event_date", { ascending: true });
+
+      if (!error && data) return data as Event[];
+    } catch {
+      // Return empty array
+    }
+  }
+
+  return [];
 }
 
 export async function getWebsiteSettings(): Promise<WebsiteSettings> {

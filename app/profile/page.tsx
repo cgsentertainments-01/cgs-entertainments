@@ -33,7 +33,7 @@ export default function ProfilePage() {
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "inherit" }}>
       <Navbar />
 
-      <div style={{ maxWidth: 1000, margin: "36px auto 64px", padding: "0 24px" }}>
+      <div style={{ maxWidth: 1000, margin: "36px auto 64px", padding: "0 24px" }} className="cgs-main-container">
         {/* Profile Card Header */}
         <div
           style={{
@@ -48,8 +48,9 @@ export default function ProfilePage() {
             flexWrap: "wrap",
             boxShadow: "0 16px 40px rgba(15, 10, 40, 0.2)",
           }}
+          className="profile-card-header"
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
             {avatarUrl ? (
               <img
                 src={avatarUrl}
@@ -81,7 +82,7 @@ export default function ProfilePage() {
                 <Sparkles size={12} color="#C4B5FD" /> Official Participant Profile
               </div>
               <h1 style={{ fontSize: 28, fontWeight: 900, margin: "0 0 4px" }}>{displayName}</h1>
-              <div style={{ fontSize: 14, color: "#C4B5FD", fontWeight: 500 }}>{user.email}</div>
+              <div style={{ fontSize: 14, color: "#C4B5FD", fontWeight: 500, wordBreak: "break-all" }}>{user.email}</div>
             </div>
           </div>
 
@@ -106,7 +107,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Details Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 32 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 32 }} className="profile-details-grid">
           {/* Card 1: Account Information */}
           <div style={{ background: "#fff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "28px", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}>
             <h3 style={{ fontSize: 18, fontWeight: 900, color: "#111827", margin: "0 0 20px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -121,12 +122,12 @@ export default function ProfilePage() {
 
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7280", textTransform: "uppercase" }}>Email Address</div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginTop: 2 }}>{user.email}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginTop: 2, wordBreak: "break-all" }}>{user.email}</div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7280", textTransform: "uppercase" }}>Account ID</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginTop: 2, fontFamily: "monospace" }}>{user.id}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginTop: 2, fontFamily: "monospace", wordBreak: "break-all" }}>{user.id}</div>
               </div>
             </div>
           </div>
@@ -162,6 +163,13 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .profile-details-grid { grid-template-columns: 1fr !important; }
+          .profile-card-header { padding: 24px !important; flex-direction: column; align-items: flex-start !important; }
+        }
+      `}</style>
 
       <Footer />
     </div>

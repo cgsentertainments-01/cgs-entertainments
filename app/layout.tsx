@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { MobileNav } from "@/components/layout/MobileNav";
 
 export const metadata: Metadata = {
   title: "CGS Entertainments – India's Premier Competition Platform",
@@ -24,7 +25,10 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <MobileNav />
+        </AuthProvider>
       </body>
     </html>
   );

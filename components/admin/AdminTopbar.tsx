@@ -20,7 +20,7 @@ interface AdminTopbarProps {
 }
 
 export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
-  const { user, signOut } = useAuth();
+  const { user, adminProfile, signOut } = useAuth();
   const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -35,8 +35,10 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const adminName = user?.user_metadata?.full_name || "Admin CGS";
-  const avatarUrl = user?.user_metadata?.avatar_url || "/images/logos/logo.jpeg";
+  const adminName = adminProfile?.name || user?.user_metadata?.full_name || user?.email || "Admin";
+  const adminEmail = adminProfile?.email || user?.email || "";
+  const adminRole = adminProfile?.role ? adminProfile.role.replace("_", " ").toUpperCase() : "ADMIN";
+  const avatarUrl = adminProfile?.avatar || user?.user_metadata?.avatar_url || "/images/logos/logo.jpeg";
 
   return (
     <header
@@ -201,15 +203,15 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
               {avatarUrl && avatarUrl !== "/images/logos/logo.jpeg" ? (
                 <img src={avatarUrl} alt={adminName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
-                "AC"
+                adminName.slice(0, 2).toUpperCase()
               )}
             </div>
 
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0F172A", lineHeight: 1.1 }}>
-                Admin CGS
+                {adminName}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#6D28D9" }}>Super Admin</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#6D28D9" }}>{adminRole}</div>
             </div>
 
             <ChevronDown size={15} color="#94A3B8" />
@@ -232,8 +234,8 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
               }}
             >
               <div style={{ padding: "10px 12px", borderBottom: "1px solid #F1F5F9", marginBottom: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>Admin CGS</div>
-                <div style={{ fontSize: 11, color: "#64748B" }}>cgsentertainments01@gmail.com</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{adminName}</div>
+                <div style={{ fontSize: 11, color: "#64748B" }}>{adminEmail}</div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -268,7 +270,7 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
                   type="button"
                   onClick={() => {
                     setProfileOpen(false);
-                    window.open("/", "_blank");
+                    router.push("/");
                   }}
                   style={{
                     display: "flex",
@@ -385,6 +387,13 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
         .dropdown-logout:hover {
           background: #FEE2E2 !important;
           transform: translateX(3px);
+        }
+        @media (min-width: 1024px) {
+          .admin-mobile-toggle { display: none !important; }
+        }
+        @media (max-width: 768px) {
+          header { padding: 0 16px !important; }
+          .admin-top-date-btn { display: none !important; }
         }
       `}</style>
     </header>

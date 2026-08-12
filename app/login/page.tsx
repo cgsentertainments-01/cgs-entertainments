@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -18,13 +18,13 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams?.get("redirectTo") || "/";
   const prefillEmail = searchParams?.get("email") || "";
 
-  const { signInWithEmail, signInWithGoogle, resendConfirmationEmail } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,38 +57,32 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      let { error } = await signInWithEmail(email.trim(), password);
-
-      if (
-        error &&
-        email.trim().toLowerCase() === "cgsentertainments01@gmail.com" &&
-        password === "Cgsentertainments@88112"
-      ) {
-        await signUpWithEmail(email.trim(), password, "Admin CGS");
-        const retry = await signInWithEmail(email.trim(), password);
-        error = retry.error;
-      }
+      const { error, adminCode } = await signInWithEmail(email.trim(), password);
 
       if (error) {
         const msg = error.message?.toLowerCase() || "";
-        if (msg.includes("invalid login credentials") || msg.includes("invalid credentials")) {
+        if (adminCode === "not_found") {
+          setErrorMsg("Your account is authenticated but is not authorized as an administrator.");
+        } else if (adminCode === "inactive") {
+          setErrorMsg("Your admin account is inactive. Please contact the system administrator.");
+        } else if (msg.includes("invalid login credentials") || msg.includes("invalid credentials")) {
           setErrorMsg("Incorrect email or password.");
         } else if (msg.includes("email not confirmed")) {
           setErrorMsg("Email not confirmed");
         } else if (msg.includes("network") || msg.includes("fetch")) {
           setErrorMsg("Network error. Please check your connection.");
         } else {
-          setErrorMsg("Incorrect email or password.");
+          setErrorMsg(error.message || "Incorrect email or password.");
         }
       } else {
-        if (email.trim().toLowerCase() === "cgsentertainments01@gmail.com") {
-          window.location.href = "/admin/dashboard";
+        if (adminCode === "ok") {
+          router.push("/admin/dashboard");
         } else {
           router.push(redirectTo);
         }
       }
     } catch (err: any) {
-      setErrorMsg("Network error. Please check your connection.");
+      setErrorMsg(err?.message || "Network error. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -542,3 +536,18 @@ export default function LoginPage() {
     </div>
   );
 }
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F8FAFC" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#6D28D9" }}>Loading Login...</div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
+  );
+}
+

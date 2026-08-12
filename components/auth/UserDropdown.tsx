@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { User, LogOut, Ticket, Award, ChevronDown, ShieldCheck } from "lucide-react";
+import { User, LogOut, Ticket, Award, ChevronDown, ShieldCheck, Bell, Trophy } from "lucide-react";
 
 export function UserDropdown() {
   const { user, signOut } = useAuth();
@@ -200,7 +200,7 @@ export function UserDropdown() {
             </Link>
 
             <Link
-              href="/certificates"
+              href="/notifications"
               onClick={() => setOpen(false)}
               style={{
                 display: "flex",
@@ -216,8 +216,29 @@ export function UserDropdown() {
               }}
               className="dropdown-item-hover"
             >
-              <Award size={17} color="#D97706" />
-              My Certificates
+              <Bell size={17} color="#6D28D9" />
+              Notifications
+            </Link>
+
+            <Link
+              href="/my-events"
+              onClick={() => setOpen(false)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderRadius: 12,
+                fontSize: 13.5,
+                fontWeight: 700,
+                color: "#374151",
+                textDecoration: "none",
+                transition: "all 0.18s",
+              }}
+              className="dropdown-item-hover"
+            >
+              <Trophy size={17} color="#D97706" />
+              My Event Results
             </Link>
           </div>
 

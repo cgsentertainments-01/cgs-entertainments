@@ -203,6 +203,10 @@ export function AdminSidebar({ mobileOpen = false, onCloseMobile }: AdminSidebar
           color: #F472B6 !important;
           transform: scale(1.1);
         }
+        @media (max-width: 1023px) {
+          .admin-desktop-sidebar { display: none !important; }
+          .admin-mobile-close { display: flex !important; }
+        }
       `}</style>
     </aside>
   );

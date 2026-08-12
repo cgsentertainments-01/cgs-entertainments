@@ -1,19 +1,5 @@
-export interface Banner {
-  id: string;
-  title: string;
-  subtitle: string;
-  description?: string;
-  button_text: string;
-  button_url: string;
-  event_date?: string;
-  location?: string;
-  desktop_image: string;
-  mobile_image?: string;
-  status: 'active' | 'inactive' | 'draft';
-  priority: number;
-  overlay_color?: string;
-  created_at?: string;
-}
+export * from "./banner";
+
 
 export interface Category {
   id: string;

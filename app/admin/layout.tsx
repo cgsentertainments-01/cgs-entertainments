@@ -25,11 +25,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Main Content Body */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: "100vh" }}>
           <AdminTopbar onToggleMobileSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)} />
-          <main style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
+          <main style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }} className="admin-main-content">
             {children}
           </main>
         </div>
       </div>
+      <style>{`
+        @media (max-width: 768px) {
+          .admin-main-content { padding: 16px 14px !important; }
+        }
+      `}</style>
     </AdminGuard>
   );
 }

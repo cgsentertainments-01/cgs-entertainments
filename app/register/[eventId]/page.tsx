@@ -26,72 +26,20 @@ import {
   Award,
   CreditCard,
   AlertTriangle,
+  FileText,
+  AlertCircle,
+  Ban,
 } from "lucide-react";
-
-/* ─── EVENTS LOOKUP DATA ─── */
-const EVENTS_LOOKUP: Record<string, {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-  location: string;
-  venue: string;
-  fee: string;
-  prize: string;
-  badge: string;
-  badgeBg: string;
-  img: string;
-}> = {
-  e1: {
-    id: "e1",
-    title: "National Dance Championship 2026",
-    date: "20 – 22 May 2026",
-    time: "9:00 AM Onwards",
-    location: "Hyderabad, Telangana",
-    venue: "HICC Convention Centre, Hyderabad",
-    fee: "₹800",
-    prize: "₹50,000",
-    badge: "DANCE",
-    badgeBg: "#312E81",
-    img: "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=85",
-  },
-  e2: {
-    id: "e2",
-    title: "Elite Modeling Show 2026",
-    date: "10 June 2026",
-    time: "5:00 PM – 10:00 PM",
-    location: "Bangalore, Karnataka",
-    venue: "The Leela Palace Ballroom, Bangalore",
-    fee: "₹800",
-    prize: "₹30,000",
-    badge: "MODELING",
-    badgeBg: "#1D4ED8",
-    img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=85",
-  },
-  e4: {
-    id: "e4",
-    title: "Voice of India 2026",
-    date: "30 June 2026",
-    time: "6:00 PM – 11:00 PM",
-    location: "Mumbai, Maharashtra",
-    venue: "Nehru Centre Auditorium, Mumbai",
-    fee: "₹600",
-    prize: "₹75,000",
-    badge: "SINGING",
-    badgeBg: "#9D174D",
-    img: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=85",
-  },
-};
-
-const FALLBACK_EVENT = EVENTS_LOOKUP["e1"];
+import { EventItem, getEventByIdOrSlug } from "@/services/event.service";
 
 /* ─── HOVER BUTTON COMPONENTS ─── */
-function SaveContinueBtn({ label = "Save & Continue", onClick }: { label?: string; onClick?: () => void }) {
+function SaveContinueBtn({ label = "Save & Continue", onClick, disabled = false }: { label?: string; onClick?: () => void; disabled?: boolean }) {
   const [h, setH] = useState(false);
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
@@ -100,23 +48,28 @@ function SaveContinueBtn({ label = "Save & Continue", onClick }: { label?: strin
         gap: 8,
         padding: "14px 38px",
         borderRadius: 14,
-        background: h
+        background: disabled
+          ? "#9CA3AF"
+          : h
           ? "linear-gradient(135deg, #5B21B6 0%, #6D28D9 100%)"
           : "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)",
         color: "#fff",
         border: "none",
         fontSize: 15,
         fontWeight: 800,
-        cursor: "pointer",
-        boxShadow: h
+        cursor: disabled ? "not-allowed" : "pointer",
+        boxShadow: disabled
+          ? "none"
+          : h
           ? "0 10px 32px rgba(109, 40, 217, 0.45)"
           : "0 6px 20px rgba(109, 40, 217, 0.32)",
         transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        transform: h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+        transform: disabled ? "none" : h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+        opacity: disabled ? 0.7 : 1,
       }}
     >
       {label}
-      <ChevronRight size={18} style={{ transform: h ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
+      <ChevronRight size={18} style={{ transform: h && !disabled ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
     </button>
   );
 }
@@ -150,12 +103,13 @@ function BackBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PayNowBtn({ amount, onClick }: { amount: string; onClick: () => void }) {
+function PayNowBtn({ amount, onClick, disabled = false, loading = false }: { amount: string; onClick: () => void; disabled?: boolean; loading?: boolean }) {
   const [h, setH] = useState(false);
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled || loading}
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
@@ -166,7 +120,9 @@ function PayNowBtn({ amount, onClick }: { amount: string; onClick: () => void })
         width: "100%",
         padding: "16px 32px",
         borderRadius: 16,
-        background: h
+        background: disabled
+          ? "#9CA3AF"
+          : h
           ? "linear-gradient(135deg, #047857 0%, #059669 100%)"
           : "linear-gradient(135deg, #059669 0%, #10B981 100%)",
         color: "#fff",
@@ -174,16 +130,19 @@ function PayNowBtn({ amount, onClick }: { amount: string; onClick: () => void })
         fontSize: 17,
         fontWeight: 900,
         letterSpacing: 0.3,
-        cursor: "pointer",
-        boxShadow: h
+        cursor: disabled || loading ? "not-allowed" : "pointer",
+        boxShadow: disabled
+          ? "none"
+          : h
           ? "0 12px 36px rgba(5, 150, 105, 0.45)"
           : "0 6px 22px rgba(5, 150, 105, 0.32)",
         transition: "all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        transform: h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+        transform: disabled || loading ? "none" : h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+        opacity: disabled ? 0.7 : 1,
       }}
     >
-      <Lock size={18} /> Pay {amount} Now
-      <ChevronRight size={19} style={{ transform: h ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
+      <Lock size={18} /> {loading ? "Processing..." : `Pay ${amount} Now`}
+      {!loading && <ChevronRight size={19} style={{ transform: h && !disabled ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />}
     </button>
   );
 }
@@ -192,25 +151,25 @@ function PayNowBtn({ amount, onClick }: { amount: string; onClick: () => void })
 export default function RegistrationPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const eventId = (params?.eventId as string) || "e1";
-  const evt = EVENTS_LOOKUP[eventId] ?? FALLBACK_EVENT;
+  const { user, loading: authLoading } = useAuth();
+  const eventIdParam = (params?.eventId as string) || "";
 
-  useEffect(() => {
-    if (!loading && !user) {
-      const currentPath = typeof window !== "undefined" ? window.location.pathname : `/register/${eventId}`;
-      router.push(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
-    }
-  }, [user, loading, router, eventId]);
+  // Dynamic Event Data state fetched from Database Single Source of Truth
+  const [evt, setEvt] = useState<EventItem | null>(null);
+  const [eventLoading, setEventLoading] = useState(true);
 
   const [activeStep, setActiveStep] = useState(1);
   const [maxReachedStep, setMaxReachedStep] = useState(1);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   const [compType, setCompType] = useState("Solo");
   const [ageCat, setAgeCat] = useState("Teens (16 – 20 Yrs)");
   const [aadhaarFile, setAadhaarFile] = useState<string | null>(null);
   const [videoFile, setVideoFile] = useState<string | null>(null);
+  const [videoFileObject, setVideoFileObject] = useState<File | null>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     fullName: "",
@@ -241,6 +200,55 @@ export default function RegistrationPage() {
     signatureDate: "",
   });
 
+  // Load current event from Database using ID or Slug
+  useEffect(() => {
+    async function fetchCurrentEvent() {
+      if (!eventIdParam) return;
+      try {
+        setEventLoading(true);
+        const data = await getEventByIdOrSlug(eventIdParam);
+        setEvt(data);
+        if (data && data.dance_styles && data.dance_styles.length > 0) {
+          setForm((prev) => ({ ...prev, danceStyle: data.dance_styles?.[0] || "" }));
+        }
+      } catch (err) {
+        console.error("Error fetching event for registration:", err);
+        setEvt(null);
+      } finally {
+        setEventLoading(false);
+      }
+    }
+    fetchCurrentEvent();
+  }, [eventIdParam]);
+
+  // Auth Redirect check
+  useEffect(() => {
+    if (!authLoading && !user) {
+      const currentPath = typeof window !== "undefined" ? window.location.pathname : `/register/${eventIdParam}`;
+      router.push(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
+    }
+  }, [user, authLoading, router, eventIdParam]);
+
+  // Check Registration Availability (Status, Deadline, Capacity)
+  const isRegistrationClosed = React.useMemo(() => {
+    if (!evt) return false;
+    if (!evt.is_published) return true;
+    const st = String(evt.status || "").toLowerCase();
+    if (st === "registration_closed" || st === "cancelled" || st === "draft" || st === "completed") {
+      return true;
+    }
+    if (evt.registration_deadline) {
+      const deadline = new Date(evt.registration_deadline);
+      if (!isNaN(deadline.getTime()) && new Date() > deadline) {
+        return true;
+      }
+    }
+    if (evt.max_participants && evt.current_participants !== undefined && evt.current_participants >= evt.max_participants) {
+      return true;
+    }
+    return false;
+  }, [evt]);
+
   const updateField = (key: string, value: any) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (errorMsg) setErrorMsg(null);
@@ -248,6 +256,11 @@ export default function RegistrationPage() {
 
   const validateStep = (step: number): boolean => {
     setErrorMsg(null);
+
+    if (isRegistrationClosed) {
+      setErrorMsg("Registrations for this event are currently closed.");
+      return false;
+    }
 
     if (step === 1) {
       if (
@@ -318,13 +331,226 @@ export default function RegistrationPage() {
     }
   };
 
-  const handleFinalPayment = () => {
+  // Secure Backend Registration & Payment Handler
+  const handleFinalPayment = async () => {
     if (!form.agreeCorrect || !form.agreeRules || !form.signature.trim() || !form.signatureDate.trim()) {
       setErrorMsg("Please agree to the declaration and enter your signature full name before paying.");
       return;
     }
-    router.push("/registration-success");
+
+    if (!evt) return;
+
+    setSubmittingPayment(true);
+    setErrorMsg(null);
+
+    try {
+      // 0. Upload Video File to Supabase Storage if file selected
+      let uploadedVideoUrl: string | null = null;
+      if (videoFileObject) {
+        setVideoUploading(true);
+        setUploadProgressMsg("Uploading video to Supabase Storage...");
+        try {
+          const uploadFormData = new FormData();
+          uploadFormData.append("file", videoFileObject);
+          const uploadRes = await fetch("/api/uploads/video", {
+            method: "POST",
+            body: uploadFormData,
+          });
+          const uploadData = await uploadRes.json();
+
+          if (!uploadRes.ok || !uploadData.success) {
+            setErrorMsg(uploadData.error || "Video upload failed. Registration cannot proceed without video.");
+            setSubmittingPayment(false);
+            setVideoUploading(false);
+            setUploadProgressMsg(null);
+            return;
+          }
+
+          uploadedVideoUrl = uploadData.videoPath || uploadData.path;
+        } catch (uploadErr: any) {
+          console.error("Video upload error:", uploadErr);
+          setErrorMsg("Network error while uploading video. Please check your connection and try again.");
+          setSubmittingPayment(false);
+          setVideoUploading(false);
+          setUploadProgressMsg(null);
+          return;
+        } finally {
+          setVideoUploading(false);
+          setUploadProgressMsg(null);
+        }
+      } else if (videoFile && (videoFile.startsWith("http://") || videoFile.startsWith("https://"))) {
+        uploadedVideoUrl = videoFile;
+      }
+
+      // 1. Submit Registration Form to Backend API
+      const res = await fetch("/api/registrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: evt.id,
+          numParticipants: form.numParticipants,
+          videoUrl: uploadedVideoUrl,
+          videoPath: uploadedVideoUrl,
+          participant: {
+            fullName: form.fullName,
+            dob: form.dob,
+            age: form.age,
+            gender: form.gender,
+            email: form.email,
+            phone: form.mobile,
+            whatsapp: form.whatsapp,
+            address: form.address,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode,
+            emergencyName: form.emergencyName,
+            emergencyMobile: form.emergencyMobile,
+            emergencyRelation: form.emergencyRelation,
+            videoUrl: uploadedVideoUrl,
+            videoPath: uploadedVideoUrl,
+          },
+          categoryId: evt.category_id,
+          danceStyleId: evt.dance_style_id,
+          notes: JSON.stringify({
+            compType,
+            ageCat,
+            danceStyle: form.danceStyle,
+            teamName: form.teamName,
+            songTitle: form.songTitle,
+            duration: form.duration,
+            academy: form.academy,
+            videoUrl: uploadedVideoUrl,
+            videoPath: uploadedVideoUrl,
+          }),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setErrorMsg(data.error || "Failed to complete registration. Please try again.");
+        setSubmittingPayment(false);
+        return;
+      }
+
+      // If registration is free or already confirmed immediately
+      if (data.confirmed || !data.razorpayOrderId || data.amount === 0) {
+        router.push(`/registration-success?registrationId=${encodeURIComponent(data.registrationId)}`);
+        return;
+      }
+
+      // 2. Process Razorpay Payment & Backend Verification
+      const triggerVerification = async (payDetails: any) => {
+        try {
+          const verifyRes = await fetch("/api/payments/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              registrationId: data.registrationId,
+              razorpayOrderId: payDetails.razorpay_order_id || data.razorpayOrderId,
+              razorpayPaymentId: payDetails.razorpay_payment_id || `pay_${Date.now()}`,
+              razorpaySignature: payDetails.razorpay_signature || "simulated_signature",
+            }),
+          });
+          const verifyData = await verifyRes.json();
+          if (verifyRes.ok && verifyData.success) {
+            router.push(`/registration-success?registrationId=${encodeURIComponent(data.registrationId)}`);
+          } else {
+            setErrorMsg(verifyData.error || "Payment verification failed. Please contact support.");
+            setSubmittingPayment(false);
+          }
+        } catch (vErr) {
+          console.error("Verification error:", vErr);
+          setErrorMsg("Payment verification network error. Please refresh and check your registration status.");
+          setSubmittingPayment(false);
+        }
+      };
+
+      const options = {
+        key: data.razorpayKeyId,
+        amount: data.amount * 100,
+        currency: data.currency || "INR",
+        name: "CGS Entertainments",
+        description: `Event Registration - ${evt.title}`,
+        order_id: data.razorpayOrderId,
+        handler: function (response: any) {
+          triggerVerification(response);
+        },
+        prefill: {
+          name: form.fullName,
+          email: form.email,
+          contact: form.mobile,
+        },
+        theme: {
+          color: "#6D28D9",
+        },
+        modal: {
+          ondismiss: function () {
+            setSubmittingPayment(false);
+          },
+        },
+      };
+
+      if (typeof (window as any).Razorpay !== "undefined") {
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      } else {
+        // Direct simulation fallback if Razorpay script is not pre-loaded on window
+        await triggerVerification({
+          razorpay_order_id: data.razorpayOrderId,
+          razorpay_payment_id: `pay_sim_${Date.now()}`,
+          razorpay_signature: "simulated_signature",
+        });
+      }
+    } catch (err: any) {
+      console.error("Registration error:", err);
+      setErrorMsg("Network error during registration. Please check your connection.");
+      setSubmittingPayment(false);
+    }
   };
+
+  if (eventLoading) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
+        <Navbar />
+        <div style={{ marginTop: 140, textAlign: "center", padding: "60px 20px" }}>
+          <div style={{ fontSize: 18, color: "#6B7280", fontWeight: 700 }}>Fetching latest event information...</div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!evt) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
+        <Navbar />
+        <div style={{ marginTop: 140, textAlign: "center", padding: "60px 20px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎭</div>
+          <h2 style={{ fontSize: 24, fontWeight: 900, color: "#111827", marginBottom: 8 }}>Event Not Found</h2>
+          <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 24 }}>
+            The requested event registration page could not be found or has been removed.
+          </p>
+          <Link
+            href="/events"
+            style={{
+              padding: "10px 24px",
+              background: "#6D28D9",
+              color: "#fff",
+              borderRadius: 10,
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            Explore Available Events
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const feeDisplay = typeof evt.registration_fee === "number" ? `₹${evt.registration_fee}` : `₹${evt.registrationFee || 0}`;
 
   return (
     <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
@@ -341,8 +567,8 @@ export default function RegistrationPage() {
       >
         <div style={{ position: "absolute", inset: 0, opacity: 0.35, pointerEvents: "none" }}>
           <Image
-            src="https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1600&q=85"
-            alt="Event Registration Dancers"
+            src={evt.img || evt.banner_image || "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1600&q=85"}
+            alt={evt.title}
             fill
             priority
             style={{ objectFit: "cover", objectPosition: "center top" }}
@@ -365,19 +591,19 @@ export default function RegistrationPage() {
           </div>
 
           {/* Page Title */}
-          <h1 style={{ fontSize: 42, fontWeight: 900, color: "#fff", margin: "0 0 8px", letterSpacing: -1 }}>
-            Event <span style={{ color: "#A78BFA" }}>Registration</span>
+          <h1 style={{ fontSize: 40, fontWeight: 900, color: "#fff", margin: "0 0 8px", letterSpacing: -1 }}>
+            {evt.title} — <span style={{ color: "#A78BFA" }}>Registration</span>
           </h1>
           <p style={{ fontSize: 15, color: "#C4B5FD", margin: "0 0 24px", fontWeight: 500 }}>
-            Fill in the details below to register for the event.
+            {evt.venue}, {evt.city} · {evt.date} · Fee: {feeDisplay}
           </p>
 
-          {/* 3 Trust Badges */}
+          {/* Trust Badges */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }} className="reg-badges">
             {[
-              { icon: <ShieldCheck size={18} color="#A78BFA" />, title: "Secure Registration", sub: "Your data is safe with us" },
-              { icon: <Zap size={18} color="#A78BFA" />, title: "Easy Process", sub: "Takes only a few minutes" },
-              { icon: <Mail size={18} color="#A78BFA" />, title: "Instant Confirmation", sub: "Get updates on your email" },
+              { icon: <ShieldCheck size={18} color="#A78BFA" />, title: "Secure Registration", sub: "Official CGS Entertainments Portal" },
+              { icon: <Zap size={18} color="#A78BFA" />, title: "Instant Access", sub: "Digital Participant Pass" },
+              { icon: <Mail size={18} color="#A78BFA" />, title: "Automated Receipts", sub: "Sent to your email & WhatsApp" },
             ].map((b, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -395,7 +621,7 @@ export default function RegistrationPage() {
 
       {/* ── 4-Step Progress Stepper Bar ── */}
       <div style={{ background: "#fff", borderBottom: "1.5px solid #E5E7EB", boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px" }} className="cgs-main-container">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 72 }} className="stepper-row">
             {[
               { num: 1, label: "Personal Details" },
@@ -455,8 +681,34 @@ export default function RegistrationPage() {
         </div>
       </div>
 
-      {/* ── Main Container: Form Steps (Left) & Sidebar (Right) ── */}
+      {/* ── Main Container ── */}
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "36px 32px 60px" }}>
+        {/* Closed Registration Warning Alert */}
+        {isRegistrationClosed && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "16px 24px",
+              borderRadius: 16,
+              background: "#FEF2F2",
+              border: "1.5px solid #FCA5A5",
+              color: "#991B1B",
+              marginBottom: 24,
+              boxShadow: "0 4px 16px rgba(239,68,68,0.12)",
+            }}
+          >
+            <Ban size={24} color="#DC2626" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>Registration Closed for this Event</div>
+              <div style={{ fontSize: 13, color: "#7F1D1D", marginTop: 2, fontWeight: 500 }}>
+                This event is currently closed for new registrations by the organizer (Status: {evt.status}).
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Error Warning Alert */}
         {errorMsg && (
           <div
@@ -501,6 +753,7 @@ export default function RegistrationPage() {
                       placeholder="Enter full name"
                       value={form.fullName}
                       onChange={(e) => updateField("fullName", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.fullName && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -513,6 +766,7 @@ export default function RegistrationPage() {
                       type="date"
                       value={form.dob}
                       onChange={(e) => updateField("dob", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.dob && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 13.5, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -526,6 +780,7 @@ export default function RegistrationPage() {
                       placeholder="Enter age"
                       value={form.age}
                       onChange={(e) => updateField("age", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.age && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -539,12 +794,14 @@ export default function RegistrationPage() {
                     <select
                       value={form.gender}
                       onChange={(e) => updateField("gender", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.gender && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     >
                       <option value="">Select Gender</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer Not To Say</option>
                     </select>
                   </div>
 
@@ -557,6 +814,7 @@ export default function RegistrationPage() {
                       placeholder="Enter parent/guardian name"
                       value={form.parentName}
                       onChange={(e) => updateField("parentName", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #E5E7EB", borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -572,6 +830,7 @@ export default function RegistrationPage() {
                       placeholder="Enter mobile number"
                       value={form.mobile}
                       onChange={(e) => updateField("mobile", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.mobile && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -585,6 +844,7 @@ export default function RegistrationPage() {
                       placeholder="Enter WhatsApp number"
                       value={form.whatsapp}
                       onChange={(e) => updateField("whatsapp", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.whatsapp && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -598,6 +858,7 @@ export default function RegistrationPage() {
                       placeholder="Enter email address"
                       value={form.email}
                       onChange={(e) => updateField("email", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.email && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -612,6 +873,7 @@ export default function RegistrationPage() {
                     placeholder="Enter full address"
                     value={form.address}
                     onChange={(e) => updateField("address", e.target.value)}
+                    disabled={isRegistrationClosed}
                     style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.address && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA", fontFamily: "inherit" }}
                   />
                 </div>
@@ -626,6 +888,7 @@ export default function RegistrationPage() {
                       placeholder="Enter city"
                       value={form.city}
                       onChange={(e) => updateField("city", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.city && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -637,6 +900,7 @@ export default function RegistrationPage() {
                     <select
                       value={form.state}
                       onChange={(e) => updateField("state", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.state && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     >
                       <option value="">Select state</option>
@@ -658,6 +922,7 @@ export default function RegistrationPage() {
                       placeholder="Enter PIN code"
                       value={form.pincode}
                       onChange={(e) => updateField("pincode", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.pincode && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -665,7 +930,7 @@ export default function RegistrationPage() {
 
                 {/* Step 1 Action Button */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 28, paddingTop: 20, borderTop: "1.5px solid #F3F4F6" }}>
-                  <SaveContinueBtn onClick={goToNextStep} />
+                  <SaveContinueBtn onClick={goToNextStep} disabled={isRegistrationClosed} />
                 </div>
               </div>
             )}
@@ -684,13 +949,17 @@ export default function RegistrationPage() {
                     Competition Type <span style={{ color: "#EF4444" }}>*</span>
                   </label>
                   <div style={{ display: "flex", gap: 20 }}>
-                    {["Solo", "Duo", "Group"].map((t) => (
+                    {(evt.participation_categories && evt.participation_categories.length > 0
+                      ? evt.participation_categories
+                      : ["Solo", "Duo", "Group"]
+                    ).map((t) => (
                       <label key={t} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#111827" }}>
                         <input
                           type="radio"
                           name="compType"
                           checked={compType === t}
                           onChange={() => setCompType(t)}
+                          disabled={isRegistrationClosed}
                           style={{ accentColor: "#6D28D9", width: 16, height: 16 }}
                         />
                         {t}
@@ -735,6 +1004,7 @@ export default function RegistrationPage() {
                           name="ageCat"
                           checked={ageCat === cat}
                           onChange={() => setAgeCat(cat)}
+                          disabled={isRegistrationClosed}
                           style={{ accentColor: "#6D28D9" }}
                         />
                         {cat}
@@ -746,20 +1016,21 @@ export default function RegistrationPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }} className="form-grid-3">
                   <div>
                     <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-                      Dance Style <span style={{ color: "#EF4444" }}>*</span>
+                      Dance / Performance Style <span style={{ color: "#EF4444" }}>*</span>
                     </label>
                     <select
                       value={form.danceStyle}
                       onChange={(e) => updateField("danceStyle", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.danceStyle && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     >
-                      <option value="">Select dance style</option>
-                      <option value="Classical">Classical</option>
-                      <option value="Hip Hop">Hip Hop</option>
-                      <option value="Contemporary">Contemporary</option>
-                      <option value="Bollywood">Bollywood</option>
-                      <option value="Western">Western</option>
-                      <option value="Folk">Folk</option>
+                      <option value="">Select style</option>
+                      {(evt.dance_styles && evt.dance_styles.length > 0
+                        ? evt.dance_styles
+                        : ["Classical", "Hip Hop", "Contemporary", "Bollywood", "Western", "Folk"]
+                      ).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -772,6 +1043,7 @@ export default function RegistrationPage() {
                       placeholder="Enter team name"
                       value={form.teamName}
                       onChange={(e) => updateField("teamName", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #E5E7EB", borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -783,9 +1055,11 @@ export default function RegistrationPage() {
                     <input
                       type="number"
                       min={1}
+                      max={evt.max_team_size || 20}
                       placeholder="Enter number"
                       value={form.numParticipants}
                       onChange={(e) => updateField("numParticipants", e.target.value)}
+                      disabled={isRegistrationClosed}
                       style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.numParticipants && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                     />
                   </div>
@@ -794,15 +1068,14 @@ export default function RegistrationPage() {
                 {/* Step 2 Action Buttons */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, paddingTop: 20, borderTop: "1.5px solid #F3F4F6" }}>
                   <BackBtn onClick={goToPrevStep} />
-                  <SaveContinueBtn onClick={goToNextStep} />
+                  <SaveContinueBtn onClick={goToNextStep} disabled={isRegistrationClosed} />
                 </div>
               </div>
             )}
 
-            {/* STEP 3: Uploads & Emergency Contact */}
+            {/* STEP 3: Uploads */}
             {activeStep === 3 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                {/* Uploads Box */}
                 <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "32px", boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
                     <Upload size={22} color="#6D28D9" />
@@ -812,13 +1085,14 @@ export default function RegistrationPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }} className="form-grid-2">
                     <div>
                       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-                        Song Title <span style={{ color: "#EF4444" }}>*</span>
+                        Track / Performance Title <span style={{ color: "#EF4444" }}>*</span>
                       </label>
                       <input
                         type="text"
-                        placeholder="Enter song title"
+                        placeholder="Enter track title"
                         value={form.songTitle}
                         onChange={(e) => updateField("songTitle", e.target.value)}
+                        disabled={isRegistrationClosed}
                         style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.songTitle && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                       />
                     </div>
@@ -832,6 +1106,7 @@ export default function RegistrationPage() {
                         placeholder="e.g. 3:45"
                         value={form.duration}
                         onChange={(e) => updateField("duration", e.target.value)}
+                        disabled={isRegistrationClosed}
                         style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.duration && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                       />
                     </div>
@@ -852,13 +1127,14 @@ export default function RegistrationPage() {
                           border: `1.5px solid ${!aadhaarFile && errorMsg ? "#EF4444" : "#E5E7EB"}`,
                           borderRadius: 10,
                           background: "#FAFAFA",
-                          cursor: "pointer",
+                          cursor: isRegistrationClosed ? "not-allowed" : "pointer",
                         }}
                       >
                         <span style={{ padding: "4px 12px", background: "#E5E7EB", borderRadius: 6, fontSize: 12, fontWeight: 700, color: "#374151" }}>Choose File</span>
                         <span style={{ fontSize: 12, color: aadhaarFile ? "#111827" : "#6B7280", fontWeight: aadhaarFile ? 700 : 500 }}>{aadhaarFile || "No file chosen"}</span>
                         <input
                           type="file"
+                          disabled={isRegistrationClosed}
                           style={{ display: "none" }}
                           onChange={(e) => setAadhaarFile(e.target.files?.[0]?.name || null)}
                         />
@@ -868,7 +1144,7 @@ export default function RegistrationPage() {
 
                     <div>
                       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-                        Dance Video (MP4 or Link) <span style={{ color: "#EF4444" }}>*</span>
+                        Audition Video <span style={{ color: "#EF4444" }}>*</span>
                       </label>
                       <label
                         style={{
@@ -879,46 +1155,55 @@ export default function RegistrationPage() {
                           border: `1.5px solid ${!videoFile && errorMsg ? "#EF4444" : "#E5E7EB"}`,
                           borderRadius: 10,
                           background: "#FAFAFA",
-                          cursor: "pointer",
+                          cursor: isRegistrationClosed ? "not-allowed" : "pointer",
                         }}
                       >
-                        <span style={{ padding: "4px 12px", background: "#E5E7EB", borderRadius: 6, fontSize: 12, fontWeight: 700, color: "#374151" }}>Choose File</span>
-                        <span style={{ fontSize: 12, color: videoFile ? "#111827" : "#6B7280", fontWeight: videoFile ? 700 : 500 }}>{videoFile || "No file chosen"}</span>
+                        <span style={{ padding: "4px 12px", background: "#6D28D9", color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700 }}>Select Video</span>
+                        <span style={{ fontSize: 12, color: videoFile ? "#111827" : "#6B7280", fontWeight: videoFile ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {videoFile || "No video selected"}
+                        </span>
                         <input
                           type="file"
+                          accept="video/*,.mp4,.mov,.webm,.avi"
+                          disabled={isRegistrationClosed || videoUploading}
                           style={{ display: "none" }}
-                          onChange={(e) => setVideoFile(e.target.files?.[0]?.name || null)}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setVideoFile(file.name);
+                              setVideoFileObject(file);
+                            }
+                          }}
                         />
                       </label>
-                      <span style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4, display: "block" }}>MP4 file (Max 100MB) or YouTube link</span>
-                    </div>
-                  </div>
+                      <span style={{ fontSize: 11, color: "#6B7280", marginTop: 4, display: "block" }}>
+                        Supported formats: MP4, MOV, WEBM (Max 100MB). Will be stored securely in Supabase Storage.
+                      </span>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginTop: 16 }} className="form-grid-2">
-                    <div>
-                      <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-                        Awards Won <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 500 }}>(Optional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Enter awards"
-                        value={form.awards}
-                        onChange={(e) => updateField("awards", e.target.value)}
-                        style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #E5E7EB", borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-                        Dance Academy Name <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 500 }}>(Optional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Enter academy name"
-                        value={form.academy}
-                        onChange={(e) => updateField("academy", e.target.value)}
-                        style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #E5E7EB", borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
-                      />
+                      {/* Video Link option fallback */}
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>Or paste Video URL (YouTube / Drive link):</div>
+                        <input
+                          type="url"
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          value={videoFile && !videoFileObject ? videoFile : ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setVideoFile(val || null);
+                            setVideoFileObject(null);
+                          }}
+                          disabled={isRegistrationClosed || videoUploading}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #E5E7EB",
+                            fontSize: 13,
+                            outline: "none",
+                            background: "#FAFAFA",
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -926,7 +1211,7 @@ export default function RegistrationPage() {
                 {/* Step 3 Action Buttons */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 20, padding: "20px 28px" }}>
                   <BackBtn onClick={goToPrevStep} />
-                  <SaveContinueBtn onClick={goToNextStep} />
+                  <SaveContinueBtn onClick={goToNextStep} disabled={isRegistrationClosed} />
                 </div>
               </div>
             )}
@@ -934,7 +1219,6 @@ export default function RegistrationPage() {
             {/* STEP 4: Review & Payment */}
             {activeStep === 4 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                {/* Review Details Box */}
                 <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "32px", boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
                     <CreditCard size={22} color="#6D28D9" />
@@ -943,32 +1227,42 @@ export default function RegistrationPage() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, background: "#FAFAFA", border: "1.5px solid #F3F4F6", borderRadius: 14, padding: "20px", marginBottom: 24 }} className="form-grid-2">
                     <div>
+                      <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Event Title</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginTop: 2 }}>{evt.title}</div>
+                    </div>
+                    <div>
                       <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Participant Name</div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginTop: 2 }}>{form.fullName || "Not provided"}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Category &amp; Style</div>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: "#6D28D9", marginTop: 2 }}>{compType} ({ageCat}) — {form.danceStyle || "Bollywood"}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#6D28D9", marginTop: 2 }}>{compType} ({ageCat}) — {form.danceStyle || "Standard"}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Contact</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginTop: 2 }}>{form.mobile || "Not provided"}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Location</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginTop: 2 }}>{form.city || "Hyderabad"}, {form.state || "Telangana"}</div>
+                      <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase" }}>Registration Fee</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: "#059669", marginTop: 2 }}>{feeDisplay}</div>
                     </div>
                   </div>
 
                   {/* Declaration & Rules */}
                   <div style={{ borderTop: "1.5px solid #F3F4F6", paddingTop: 20, marginTop: 16 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 800, color: "#111827", marginBottom: 14 }}>Declaration &amp; Signature</h3>
+
+                    {/* Rules & Regulations text from DB */}
+                    {evt.rules_regulations && (
+                      <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "14px", marginBottom: 16, fontSize: 12.5, color: "#4B5563", lineHeight: 1.6 }}>
+                        <div style={{ fontWeight: 800, color: "#111827", marginBottom: 4 }}>Event Rules &amp; Guidelines:</div>
+                        {evt.rules_regulations}
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13.5, color: "#374151", fontWeight: 600 }}>
                         <input
                           type="checkbox"
                           checked={form.agreeCorrect}
                           onChange={(e) => updateField("agreeCorrect", e.target.checked)}
+                          disabled={isRegistrationClosed}
                           style={{ accentColor: "#6D28D9", width: 17, height: 17 }}
                         />
                         I confirm that the information provided above is accurate and true.
@@ -978,9 +1272,10 @@ export default function RegistrationPage() {
                           type="checkbox"
                           checked={form.agreeRules}
                           onChange={(e) => updateField("agreeRules", e.target.checked)}
+                          disabled={isRegistrationClosed}
                           style={{ accentColor: "#6D28D9", width: 17, height: 17 }}
                         />
-                        I agree to abide by all competition rules and guidelines set by CGS Entertainments.
+                        I agree to abide by all competition rules and terms set by CGS Entertainments.
                       </label>
                     </div>
 
@@ -994,6 +1289,7 @@ export default function RegistrationPage() {
                           placeholder="Type your full name"
                           value={form.signature}
                           onChange={(e) => updateField("signature", e.target.value)}
+                          disabled={isRegistrationClosed}
                           style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.signature && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 14, outline: "none", background: "#FAFAFA" }}
                         />
                       </div>
@@ -1006,6 +1302,7 @@ export default function RegistrationPage() {
                           type="date"
                           value={form.signatureDate}
                           onChange={(e) => updateField("signatureDate", e.target.value)}
+                          disabled={isRegistrationClosed}
                           style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${!form.signatureDate && errorMsg ? "#EF4444" : "#E5E7EB"}`, borderRadius: 10, fontSize: 13.5, outline: "none", background: "#FAFAFA" }}
                         />
                       </div>
@@ -1021,16 +1318,22 @@ export default function RegistrationPage() {
                       <div style={{ fontSize: 22, fontWeight: 900, color: "#111827" }}>Complete Your Payment</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>Total Fee</div>
-                      <div style={{ fontSize: 26, fontWeight: 900, color: "#6D28D9" }}>{evt.fee}</div>
+                      <div style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>Total Registration Fee</div>
+                      <div style={{ fontSize: 26, fontWeight: 900, color: "#6D28D9" }}>{feeDisplay}</div>
                     </div>
                   </div>
 
-                  <PayNowBtn amount={evt.fee} onClick={handleFinalPayment} />
+                  {uploadProgressMsg && (
+                    <div style={{ padding: "10px 14px", background: "#F3E8FF", border: "1px solid #C4B5FD", borderRadius: 10, marginBottom: 16, fontSize: 13, fontWeight: 700, color: "#6D28D9", textAlign: "center" }}>
+                      ⏳ {uploadProgressMsg}
+                    </div>
+                  )}
+
+                  <PayNowBtn amount={feeDisplay} onClick={handleFinalPayment} disabled={isRegistrationClosed || videoUploading} loading={submittingPayment || videoUploading} />
 
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
                     <BackBtn onClick={goToPrevStep} />
-                    <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>🔒 SSL Encrypted &amp; Secure Payment</span>
+                    <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>🔒 Verified Razorpay Gateway &amp; SSL Encrypted</span>
                   </div>
                 </div>
               </div>
@@ -1042,10 +1345,10 @@ export default function RegistrationPage() {
             {/* Card 1: Event Summary */}
             <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.06)" }}>
               <div style={{ position: "relative", width: "100%", height: 160 }}>
-                <Image src={evt.img} alt={evt.title} fill style={{ objectFit: "cover" }} />
+                <Image src={evt.img || evt.banner_image || "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=85"} alt={evt.title} fill style={{ objectFit: "cover" }} />
                 <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)" }} />
-                <span style={{ position: "absolute", bottom: 12, left: 14, padding: "4px 10px", borderRadius: 6, background: evt.badgeBg, color: "#fff", fontSize: 10, fontWeight: 800 }}>
-                  {evt.badge}
+                <span style={{ position: "absolute", bottom: 12, left: 14, padding: "4px 10px", borderRadius: 6, background: evt.badgeBg || "#6D28D9", color: "#fff", fontSize: 10, fontWeight: 800 }}>
+                  {evt.badge || evt.category}
                 </span>
               </div>
 
@@ -1057,37 +1360,31 @@ export default function RegistrationPage() {
                     <Calendar size={15} color="#6D28D9" /> <span>{evt.date}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Clock size={15} color="#6D28D9" /> <span>{evt.time}</span>
+                    <Clock size={15} color="#6D28D9" /> <span>{evt.event_start_time || "10:00 AM Onwards"}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <MapPin size={15} color="#EC4899" /> <span>{evt.location}</span>
+                    <MapPin size={15} color="#EC4899" /> <span>{evt.location || evt.venue}</span>
                   </div>
                 </div>
 
                 <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1.5px solid #F3F4F6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600 }}>Registration Fee</span>
-                  <span style={{ fontSize: 20, fontWeight: 900, color: "#6D28D9" }}>{evt.fee} <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 500 }}>Per Participant</span></span>
+                  <span style={{ fontSize: 20, fontWeight: 900, color: "#6D28D9" }}>{feeDisplay}</span>
                 </div>
               </div>
             </div>
 
-            {/* Card 2: What you get? */}
-            <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.04)" }}>
-              <h4 style={{ fontSize: 15, fontWeight: 800, color: "#111827", margin: "0 0 12px" }}>What you get?</h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[
-                  "Exciting Cash Prizes",
-                  "Certificates for all participants",
-                  "Medals & Trophies",
-                  "Media Coverage",
-                  "Professional Stage",
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", fontWeight: 500 }}>
-                    <CheckCircle2 size={16} color="#6D28D9" /> {item}
-                  </div>
-                ))}
+            {/* Card 2: Rules & Terms */}
+            {(evt.rules_regulations || evt.terms_conditions) && (
+              <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.04)" }}>
+                <h4 style={{ fontSize: 15, fontWeight: 800, color: "#111827", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FileText size={16} color="#6D28D9" /> Event Rules &amp; Terms
+                </h4>
+                <div style={{ fontSize: 12.5, color: "#4B5563", lineHeight: 1.6, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
+                  {evt.rules_regulations || evt.terms_conditions}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Card 3: Need Help? */}
             <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.04)" }}>
@@ -1096,7 +1393,7 @@ export default function RegistrationPage() {
                 <h4 style={{ fontSize: 15, fontWeight: 800, color: "#111827", margin: 0 }}>Need Help?</h4>
               </div>
               <p style={{ fontSize: 12.5, color: "#6B7280", margin: "0 0 14px", lineHeight: 1.5 }}>
-                Our team is here to help you with any queries.
+                Our team is here to help you with your event registration.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13, color: "#374151" }}>
@@ -1104,7 +1401,7 @@ export default function RegistrationPage() {
                   <Phone size={14} color="#6D28D9" /> <span>+91 98765 43210</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Mail size={14} color="#6D28D9" /> <span>support@cgsentertainments.com</span>
+                  <Mail size={14} color="#6D28D9" /> <span>cgsentertainments01@gmail.com</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#059669", fontWeight: 700, cursor: "pointer" }}>
                   <MessageCircle size={15} color="#059669" /> <span>Chat on WhatsApp</span>

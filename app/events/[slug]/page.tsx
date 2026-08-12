@@ -24,88 +24,6 @@ import {
   Youtube,
 } from "lucide-react";
 
-/* ─── EVENT DATA ─── */
-const EVENTS_DB: Record<string, {
-  id: string; slug: string; title: string; category: string;
-  badge: string; badgeBg: string; date: string; time: string;
-  location: string; venue: string; participants: number; maxParticipants: number;
-  prize: string; registrationFee: string; status: string;
-  img: string; desc: string; rules: string[]; schedule: { time: string; activity: string }[];
-  categories: { name: string; age: string; fee: string }[];
-}> = {
-  "national-dance-championship": {
-    id: "e1", slug: "national-dance-championship",
-    title: "National Dance Championship",
-    category: "Dance", badge: "DANCE", badgeBg: "#312E81",
-    date: "25 May 2026", time: "10:00 AM – 8:00 PM",
-    location: "Hyderabad, Telangana",
-    venue: "HICC Convention Centre, Hyderabad",
-    participants: 240, maxParticipants: 500,
-    prize: "₹50,000", registrationFee: "₹500",
-    status: "Open",
-    img: "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1400&q=90",
-    desc: "National Dance Championship 2026 is a grand platform for dancers across India to showcase their talent, creativity and passion. Compete with the best and win exciting prizes along with recognition.",
-    rules: [
-      "Each performance must be 3–5 minutes long.",
-      "Participants must bring their own music (USB/Aux).",
-      "Costumes must be decent and stage-appropriate.",
-      "Judges' decision is final and binding.",
-      "Registration must be completed at least 3 days before the event.",
-      "Age proof may be required at the venue.",
-    ],
-    schedule: [
-      { time: "09:00 AM", activity: "Registration & Check-in" },
-      { time: "10:00 AM", activity: "Opening Ceremony" },
-      { time: "10:30 AM", activity: "Junior Category (5–12 years)" },
-      { time: "01:00 PM", activity: "Lunch Break" },
-      { time: "02:00 PM", activity: "Teen Category (13–17 years)" },
-      { time: "04:30 PM", activity: "Senior Category (18+ years)" },
-      { time: "07:00 PM", activity: "Award Ceremony & Prizes" },
-      { time: "08:00 PM", activity: "Closing Performance" },
-    ],
-    categories: [
-      { name: "Junior Solo", age: "5–12 years", fee: "₹300" },
-      { name: "Teen Solo", age: "13–17 years", fee: "₹400" },
-      { name: "Senior Solo", age: "18+ years", fee: "₹500" },
-      { name: "Group (3–6)", age: "All Ages", fee: "₹1200" },
-      { name: "Duet", age: "All Ages", fee: "₹700" },
-    ],
-  },
-  "elite-modeling-show": {
-    id: "e2", slug: "elite-modeling-show",
-    title: "Elite Modeling Show 2026",
-    category: "Modeling", badge: "MODELING", badgeBg: "#1D4ED8",
-    date: "10 June 2026", time: "5:00 PM – 10:00 PM",
-    location: "Bangalore, Karnataka",
-    venue: "The Leela Palace Ballroom, Bangalore",
-    participants: 120, maxParticipants: 200,
-    prize: "₹30,000", registrationFee: "₹800",
-    status: "Open",
-    img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1400&q=90",
-    desc: "A premier platform for aspiring models to showcase their walk, poise and stage presence. Get scouted by top agencies and win exciting prizes.",
-    rules: [
-      "Participants must be 16 years or older.",
-      "Professional attire is mandatory.",
-      "No cosmetic surgery visible during evaluation.",
-      "Judges evaluate walk, poise, confidence and stage presence.",
-    ],
-    schedule: [
-      { time: "04:00 PM", activity: "Registration & Makeup" },
-      { time: "05:00 PM", activity: "Opening Walk" },
-      { time: "06:00 PM", activity: "Category Walks" },
-      { time: "08:00 PM", activity: "Final Round" },
-      { time: "09:30 PM", activity: "Award Ceremony" },
-    ],
-    categories: [
-      { name: "Female Category", age: "16–25 years", fee: "₹800" },
-      { name: "Male Category", age: "16–25 years", fee: "₹800" },
-      { name: "Senior Category", age: "26+ years", fee: "₹600" },
-    ],
-  },
-};
-
-const FALLBACK_EVENT = EVENTS_DB["national-dance-championship"];
-
 /* ─── GUESTS & JUDGES DATA ─── */
 const GUESTS_AND_JUDGES = [
   {
@@ -350,8 +268,72 @@ function LiveCountdownTimer() {
 export default function EventDetailPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "";
-  const evt = EVENTS_DB[slug] ?? FALLBACK_EVENT;
+  const [evt, setEvt] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
+
+  useEffect(() => {
+    async function loadEventDetail() {
+      if (!slug) return;
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/events?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setEvt(data.event || null);
+        } else {
+          setEvt(null);
+        }
+      } catch (err) {
+        console.error("Error loading event detail:", err);
+        setEvt(null);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadEventDetail();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
+        <Navbar />
+        <div style={{ marginTop: 120, textAlign: "center", color: "#6B7280", fontWeight: 600 }}>
+          Loading event details...
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!evt) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
+        <Navbar />
+        <div style={{ marginTop: 140, textAlign: "center", padding: "60px 20px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎭</div>
+          <h2 style={{ fontSize: 24, fontWeight: 900, color: "#111827", marginBottom: 8 }}>Event Not Found</h2>
+          <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 24 }}>The event you are looking for does not exist or has been removed.</p>
+          <Link
+            href="/events"
+            style={{
+              padding: "10px 24px",
+              background: "#6D28D9",
+              color: "#fff",
+              borderRadius: 10,
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            Back to Events
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const feeDisplay = typeof evt.registrationFee === "number" ? `₹${evt.registrationFee}` : evt.registrationFee || "₹0";
 
   return (
     <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
@@ -361,7 +343,7 @@ export default function EventDetailPage() {
       <div style={{ marginTop: 64 }}>
         <div style={{ position: "relative", width: "100%", height: 340, overflow: "hidden" }} className="det-hero">
           <Image
-            src={evt.img}
+            src={evt.img || evt.banner_url || "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1400&q=90"}
             alt={evt.title}
             fill
             priority
@@ -382,7 +364,7 @@ export default function EventDetailPage() {
               style={{
                 padding: "6px 14px",
                 borderRadius: 8,
-                background: evt.badgeBg,
+                background: evt.badgeBg || "#312E81",
                 color: "#fff",
                 fontSize: 11,
                 fontWeight: 800,
@@ -391,7 +373,7 @@ export default function EventDetailPage() {
                 boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
               }}
             >
-              {evt.badge}
+              {evt.badge || evt.category || "EVENT"}
             </span>
           </div>
 
@@ -443,8 +425,8 @@ export default function EventDetailPage() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 22px" }}>
               {[
                 { icon: <Calendar size={14} color="#C4B5FD" />, text: evt.date },
-                { icon: <Clock size={14} color="#C4B5FD" />, text: evt.time },
-                { icon: <MapPin size={14} color="#F472B6" />, text: evt.venue },
+                { icon: <Clock size={14} color="#C4B5FD" />, text: "10:00 AM – 8:00 PM" },
+                { icon: <MapPin size={14} color="#F472B6" />, text: evt.location || evt.venue },
               ].map((m, i) => (
                 <span key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: "#F3F4F6", fontWeight: 600 }}>
                   {m.icon}
@@ -457,7 +439,7 @@ export default function EventDetailPage() {
       </div>
 
       {/* ── Main Content Container ── */}
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 60px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 60px" }} className="cgs-main-container">
         {/* Breadcrumb */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 28 }}>
           <Link href="/" style={{ fontSize: 13, color: "#6B7280", textDecoration: "none", fontWeight: 500 }}>
@@ -513,7 +495,7 @@ export default function EventDetailPage() {
                 <span style={{ position: "absolute", bottom: -6, left: 0, width: 28, height: 3, background: "#6D28D9", borderRadius: 99 }} />
               </h2>
               <p style={{ fontSize: 14.5, color: "#4B5563", lineHeight: 1.8, margin: "16px 0 0" }}>
-                {evt.desc}
+                {evt.description || `${evt.title} is an official national talent competition hosted by CGS Entertainments. Compete with top performers and win exciting awards and recognition.`}
               </p>
             </div>
 
@@ -525,15 +507,15 @@ export default function EventDetailPage() {
               </h2>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }} className="highlights-grid">
-                <HighlightCard icon={<Trophy size={20} color="#D97706" />} label="Prize Pool" value={evt.prize} />
-                <HighlightCard icon={<Users size={20} color="#6D28D9" />} label="Participants" value={`${evt.participants}+`} />
-                <HighlightCard icon={<Shield size={20} color="#2563EB" />} label="Entry Fee" value={evt.registrationFee} />
-                <HighlightCard icon={<Star size={20} color="#EC4899" />} label="Status" value={evt.status} />
+                <HighlightCard icon={<Trophy size={20} color="#D97706" />} label="Prize Pool" value="₹50,000" />
+                <HighlightCard icon={<Users size={20} color="#6D28D9" />} label="Participants" value={`${evt.participantsCount || 200}+`} />
+                <HighlightCard icon={<Shield size={20} color="#2563EB" />} label="Entry Fee" value={feeDisplay} />
+                <HighlightCard icon={<Star size={20} color="#EC4899" />} label="Status" value={evt.status === "registration_open" ? "Registration Open" : evt.status || "Open"} />
               </div>
             </div>
           </div>
 
-          {/* ── RIGHT COLUMN: Sticky Purple Registration Sidebar (Matching Image 2) ── */}
+          {/* ── RIGHT COLUMN: Sticky Purple Registration Sidebar ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div
               style={{
@@ -545,6 +527,7 @@ export default function EventDetailPage() {
                 position: "sticky",
                 top: 90,
               }}
+              className="det-reg-card"
             >
               <h3 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: "0 0 4px" }}>
                 Register for this Event
@@ -561,7 +544,7 @@ export default function EventDetailPage() {
                   Registration Fee
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
-                  <span style={{ fontSize: 32, fontWeight: 900, color: "#fff" }}>{evt.registrationFee}</span>
+                  <span style={{ fontSize: 32, fontWeight: 900, color: "#fff" }}>{feeDisplay}</span>
                   <span style={{ fontSize: 13, color: "#DDD6FE", fontWeight: 500 }}>Per Participant</span>
                 </div>
               </div>
@@ -589,6 +572,11 @@ export default function EventDetailPage() {
           .det-hero { height: 260px !important; }
           .det-h1 { font-size: 24px !important; }
           .highlights-grid { grid-template-columns: 1fr !important; }
+          .det-reg-card { position: static !important; }
+        }
+        @media (max-width: 640px) {
+          .det-hero { height: 220px !important; }
+          .det-h1 { font-size: 20px !important; }
         }
       `}</style>
       <Footer />

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -16,10 +16,10 @@ import {
   Shield,
 } from "lucide-react";
 
-export default function AdminLoginPage() {
+function AdminLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const unauthorizedError = searchParams?.get("error") === "unauthorized";
+  const paramError = searchParams?.get("error");
 
   const { signInWithEmail } = useAuth();
 
@@ -27,7 +27,18 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(() => {
+    if (paramError === "unauthorized_admin") {
+      return "Your account is authenticated but is not authorized as an administrator. Please contact the system administrator.";
+    }
+    if (paramError === "inactive_admin") {
+      return "Your admin account is inactive. Please contact the system administrator.";
+    }
+    if (paramError === "unauthorized") {
+      return "You must be signed in with an authorized admin account to access the dashboard.";
+    }
+    return null;
+  });
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,28 +50,43 @@ export default function AdminLoginPage() {
       return;
     }
 
-    // Verify admin email
-    if (targetEmail.toLowerCase() !== "cgsentertainments01@gmail.com") {
-      setErrorMsg("Unauthorized Access. Email is not registered as an official Admin.");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const { error } = await signInWithEmail(targetEmail, password);
+      const { error, adminCode } = await signInWithEmail(targetEmail, password);
 
       if (error) {
-        setErrorMsg("Incorrect email or password. Please verify credentials.");
+        console.error("Admin Login Error details:", error);
+        if (adminCode === "not_found") {
+          setErrorMsg(
+            "Your account is authenticated but is not authorized as an administrator. Please contact the system administrator."
+          );
+        } else if (adminCode === "inactive") {
+          setErrorMsg(
+            "Your admin account is inactive. Please contact the system administrator."
+          );
+        } else {
+          // General Supabase auth error with user-friendly formatting
+          const message = error.message || "Authentication failed.";
+          if (message.toLowerCase().includes("invalid login credentials")) {
+            setErrorMsg("Invalid email or password. Please check your credentials.");
+          } else if (message.toLowerCase().includes("email not confirmed")) {
+            setErrorMsg("Email address is not confirmed. Please check your inbox.");
+          } else {
+            setErrorMsg(message);
+          }
+        }
       } else {
-        window.location.href = "/admin/dashboard";
+        router.push("/admin/dashboard");
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || "An error occurred during authentication.");
+      console.error("Unhandled login exception:", err);
+      setErrorMsg(err?.message || "An unexpected error occurred during authentication.");
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 24px" }}>
@@ -362,3 +388,18 @@ export default function AdminLoginPage() {
     </div>
   );
 }
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F8FAFC" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#6D28D9" }}>Loading Admin Login...</div>
+        </div>
+      }
+    >
+      <AdminLoginContent />
+    </Suspense>
+  );
+}
+

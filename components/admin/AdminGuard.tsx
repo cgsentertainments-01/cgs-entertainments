@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ShieldAlert, Loader2 } from "lucide-react";
 
 export function AdminGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, adminProfile, isAdmin, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -15,19 +15,18 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && isAdminPath && !isLoginPage) {
-      const adminEmail = "cgsentertainments01@gmail.com";
-      if (!user || user.email?.toLowerCase() !== adminEmail.toLowerCase()) {
+      if (!user || !isAdmin) {
         router.push("/admin/login");
       }
     }
-  }, [user, loading, pathname, isAdminPath, isLoginPage, router]);
+  }, [user, isAdmin, loading, pathname, isAdminPath, isLoginPage, router]);
 
   // If on login page, render children directly
   if (isLoginPage) {
     return <>{children}</>;
   }
 
-  // Show loading spinner while checking auth session
+  // Show loading spinner while checking auth session & admin profile
   if (loading) {
     return (
       <div
@@ -44,14 +43,16 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
       >
         <Loader2 size={40} color="#7C3AED" className="animate-spin" />
         <div style={{ fontSize: 14, fontWeight: 700, color: "#C4B5FD", letterSpacing: 0.5 }}>
-          Verifying Admin Credentials...
+          Verifying Admin Credentials &amp; Permissions...
         </div>
       </div>
     );
   }
 
-  // If not authenticated or wrong email, return redirect state
-  if (!user || user.email?.toLowerCase() !== "cgsentertainments01@gmail.com") {
+  // Handle case where user is logged into Supabase Auth but not an authorized admin or inactive
+  if (!user || !isAdmin) {
+    const isInactive = adminProfile && adminProfile.is_active === false;
+
     return (
       <div
         style={{
@@ -66,30 +67,40 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
           textAlign: "center",
         }}
       >
-        <ShieldAlert size={48} color="#EF4444" style={{ marginBottom: 16 }} />
-        <h2 style={{ fontSize: 24, fontWeight: 900, margin: "0 0 8px" }}>Unauthorized Access</h2>
-        <p style={{ fontSize: 14, color: "#94A3B8", maxWidth: 400, margin: "0 0 24px" }}>
-          You must be logged in as the official CGS Admin to access this panel.
+        <ShieldAlert size={52} color="#EF4444" style={{ marginBottom: 16 }} />
+        <h2 style={{ fontSize: 26, fontWeight: 900, margin: "0 0 10px" }}>
+          {isInactive ? "Admin Account Inactive" : "Unauthorized Admin Access"}
+        </h2>
+        <p style={{ fontSize: 14, color: "#94A3B8", maxWidth: 440, margin: "0 0 28px", lineHeight: 1.6 }}>
+          {isInactive
+            ? "Your administrator account has been set to inactive. Please contact the system administrator."
+            : "Your account is authenticated with Supabase Auth, but is not authorized as an administrator in public.admins."}
         </p>
-        <button
-          type="button"
-          onClick={() => router.push("/admin/login")}
-          style={{
-            background: "linear-gradient(135deg, #7C3AED, #6D28D9)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 12,
-            padding: "12px 28px",
-            fontSize: 14,
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Go to Admin Login
-        </button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              router.push("/admin/login");
+            }}
+            style={{
+              background: "linear-gradient(135deg, #7C3AED, #6D28D9)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              padding: "12px 28px",
+              fontSize: 14,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Return to Admin Login
+          </button>
+        </div>
       </div>
     );
   }
 
   return <>{children}</>;
 }
+

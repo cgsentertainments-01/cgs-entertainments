@@ -1,343 +1,300 @@
 "use client";
 
-import React, { useState } from "react";
+export const dynamic = "force-dynamic";
+
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { Banner, BannerFilterState, BannerFormData, BannerStats as BannerStatsType } from "@/types/banner";
 import {
-  Image as ImageIcon,
-  Plus,
-  Trash2,
-  Eye,
-  EyeOff,
-  ArrowUp,
-  ArrowDown,
-  UploadCloud,
-  CheckCircle2,
-} from "lucide-react";
+  fetchBanners,
+  createBanner,
+  updateBanner,
+  deleteBanner,
+  duplicateBanner,
+  reorderBanners,
+} from "@/services/banner.service";
+import { deriveBannerStatus } from "@/lib/utils/banner-status";
 
-interface BannerItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  imageUrl: string;
-  active: boolean;
-  order: number;
-}
+import { BannerStats } from "@/components/admin/banners/BannerStats";
+import { BannerFilters } from "@/components/admin/banners/BannerFilters";
+import { BannerGrid } from "@/components/admin/banners/BannerGrid";
+import { BannerFormModal } from "@/components/admin/banners/BannerFormModal";
+import { BannerPreviewModal } from "@/components/admin/banners/BannerPreviewModal";
+import { DeleteBannerDialog } from "@/components/admin/banners/DeleteBannerDialog";
+import { CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
-export default function AdminBannerPage() {
-  const [banners, setBanners] = useState<BannerItem[]>([
-    {
-      id: "BAN-1",
-      title: "DANCE TO EXPRESS, COMPETE TO IMPRESS!",
-      subtitle: "India's Biggest Dance Competitions Managed with Passion by CGS Entertainments.",
-      imageUrl: "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=80",
-      active: true,
-      order: 1,
-    },
-    {
-      id: "BAN-2",
-      title: "SOUTH INDIA MODELING & FASHION SHOW 2026",
-      subtitle: "Register participants, review judges scores & issue verified certificates.",
-      imageUrl: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80",
-      active: true,
-      order: 2,
-    },
-    {
-      id: "BAN-3",
-      title: "ACTING & THEATRE EXCELLENCE AWARDS 2026",
-      subtitle: "Unleash your acting potential on India's premier national stage.",
-      imageUrl: "https://images.unsplash.com/photo-1469488865564-c2de10f69f96?auto=format&fit=crop&w=1200&q=80",
-      active: false,
-      order: 3,
-    },
-  ]);
+export default function AdminBannersPage() {
+  const [banners, setBanners] = useState<Banner[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [newTitle, setNewTitle] = useState("");
-  const [newSubtitle, setNewSubtitle] = useState("");
-  const [newImageUrl, setNewImageUrl] = useState("");
-  const [uploading, setUploading] = useState(false);
+  // Filter State
+  const [filters, setFilters] = useState<BannerFilterState>({
+    search: "",
+    status: "all",
+    placement: "all",
+  });
 
-  const toggleActive = (id: string) => {
-    setBanners(
-      banners.map((b) => (b.id === id ? { ...b, active: !b.active } : b))
-    );
+  // Modal States
+  const [formModalOpen, setFormModalOpen] = useState(false);
+  const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
+
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewBanner, setPreviewBanner] = useState<Banner | null>(null);
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingBannerState, setDeletingBannerState] = useState<Banner | null>(null);
+
+  // Toast Notification State
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const deleteBanner = (id: string) => {
-    if (confirm("Are you sure you want to delete this hero banner?")) {
-      setBanners(banners.filter((b) => b.id !== id));
+  // Load Banners from API
+  const loadBanners = useCallback(async (showLoader = true) => {
+    if (showLoader) setLoading(true);
+    else setRefreshing(true);
+
+    try {
+      const data = await fetchBanners("admin");
+      setBanners(data);
+    } catch (err: any) {
+      console.error("Failed to load banners:", err);
+      showToast(err.message || "Failed to load banners from server", "error");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBanners(true);
+  }, [loadBanners]);
+
+  // Statistics calculation based on derived status
+  const stats: BannerStatsType = useMemo(() => {
+    const total = banners.length;
+    let active = 0;
+    let scheduled = 0;
+    let expired = 0;
+    let inactive = 0;
+    let draft = 0;
+
+    banners.forEach((b) => {
+      const derived = deriveBannerStatus(b);
+      if (derived === "active") active++;
+      else if (derived === "scheduled") scheduled++;
+      else if (derived === "expired") expired++;
+      else if (derived === "inactive") inactive++;
+      else if (derived === "draft") draft++;
+    });
+
+    return { total, active, scheduled, expired, inactive, draft };
+  }, [banners]);
+
+  // Filtered & Searched Banners
+  const filteredBanners = useMemo(() => {
+    return banners.filter((b) => {
+      // Search match
+      if (filters.search) {
+        const query = filters.search.toLowerCase();
+        const titleMatch = b.title.toLowerCase().includes(query);
+        const subtitleMatch = b.subtitle?.toLowerCase().includes(query) || false;
+        const descMatch = b.description?.toLowerCase().includes(query) || false;
+        const buttonMatch = b.button_text?.toLowerCase().includes(query) || false;
+        if (!titleMatch && !subtitleMatch && !descMatch && !buttonMatch) {
+          return false;
+        }
+      }
+
+      // Placement filter
+      if (filters.placement !== "all" && b.banner_type !== filters.placement) {
+        return false;
+      }
+
+      // Status filter
+      if (filters.status !== "all") {
+        const derived = deriveBannerStatus(b);
+        if (derived !== filters.status) return false;
+      }
+
+      return true;
+    });
+  }, [banners, filters]);
+
+  // Handlers
+  const handleCreateClick = () => {
+    setEditingBanner(null);
+    setFormModalOpen(true);
+  };
+
+  const handleEditClick = (banner: Banner) => {
+    setEditingBanner(banner);
+    setFormModalOpen(true);
+  };
+
+  const handlePreviewClick = (banner: Banner) => {
+    setPreviewBanner(banner);
+    setPreviewModalOpen(true);
+  };
+
+  const handleDeleteClick = (banner: Banner) => {
+    setDeletingBannerState(banner);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleToggleActive = async (banner: Banner) => {
+    try {
+      const updated = await updateBanner(banner.id, { is_active: !banner.is_active });
+      setBanners((prev) => prev.map((b) => (b.id === banner.id ? updated : b)));
+      showToast(`Banner "${banner.title}" is now ${updated.is_active ? "Active" : "Inactive"}`);
+    } catch (err: any) {
+      showToast(err.message || "Failed to update status", "error");
     }
   };
 
-  const handleAddBanner = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle) return;
+  const handleDuplicateClick = async (banner: Banner) => {
+    try {
+      const duplicated = await duplicateBanner(banner.id);
+      setBanners((prev) => [...prev, duplicated]);
+      showToast(`Duplicated banner as "${duplicated.title}"`);
+    } catch (err: any) {
+      showToast(err.message || "Failed to duplicate banner", "error");
+    }
+  };
 
-    const newBanner: BannerItem = {
-      id: `BAN-${Date.now().toString().slice(-4)}`,
-      title: newTitle,
-      subtitle: newSubtitle || "Managed by CGS Entertainments",
-      imageUrl:
-        newImageUrl ||
-        "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80",
-      active: true,
-      order: banners.length + 1,
-    };
+  const handleSaveBanner = async (formData: BannerFormData) => {
+    if (editingBanner) {
+      const updated = await updateBanner(editingBanner.id, formData);
+      setBanners((prev) => prev.map((b) => (b.id === editingBanner.id ? updated : b)));
+      showToast("Banner updated successfully!");
+    } else {
+      const created = await createBanner(formData);
+      setBanners((prev) => [...prev, created]);
+      showToast("New banner published successfully!");
+    }
+  };
 
-    setBanners([...banners, newBanner]);
-    setNewTitle("");
-    setNewSubtitle("");
-    setNewImageUrl("");
+  const handleConfirmDelete = async () => {
+    if (!deletingBannerState) return;
+    try {
+      await deleteBanner(deletingBannerState.id);
+      setBanners((prev) => prev.filter((b) => b.id !== deletingBannerState.id));
+      showToast("Banner deleted successfully!");
+    } catch (err: any) {
+      showToast(err.message || "Failed to delete banner", "error");
+    }
+  };
+
+  const handleReorder = async (reorderedList: Banner[]) => {
+    setBanners(reorderedList);
+    try {
+      const itemsPayload = reorderedList.map((b, i) => ({
+        id: b.id,
+        display_order: i + 1,
+      }));
+      await reorderBanners(itemsPayload);
+      showToast("Banner order updated successfully!");
+    } catch (err: any) {
+      showToast(err.message || "Failed to persist reorder", "error");
+    }
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-      {/* Header */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 1400, margin: "0 auto", paddingBottom: 40 }}>
+      {/* Toast Alert */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 999999,
+            padding: "14px 22px",
+            borderRadius: 14,
+            background: toast.type === "success" ? "#0F172A" : "#7F1D1D",
+            color: "#ffffff",
+            fontSize: 14,
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.25)",
+            animation: "fadeInUp 0.2s ease",
+          }}
+        >
+          {toast.type === "success" ? <CheckCircle2 size={18} color="#22C55E" /> : <AlertCircle size={18} color="#F87171" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Top Header Section */}
       <div>
         <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 4px", letterSpacing: -0.4 }}>
-          Hero Banner Management
+          Banners
         </h1>
         <p style={{ fontSize: 14, color: "#64748B", margin: 0, fontWeight: 500 }}>
-          Manage home page hero sliders, promotions, and stage show feature banners.
+          Manage promotional banners, hero sliders, and announcement popups displayed across your website.
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 24 }}>
-        {/* Banner List */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
-            Active &amp; Expired Banners ({banners.length})
-          </h2>
+      {/* Statistics Cards */}
+      <BannerStats stats={stats} />
 
-          {banners.map((b, idx) => (
-            <div
-              key={b.id}
-              style={{
-                background: "#ffffff",
-                borderRadius: 20,
-                border: "1.5px solid #E2E8F0",
-                overflow: "hidden",
-                boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
-              }}
-            >
-              <div
-                style={{
-                  height: 140,
-                  position: "relative",
-                  backgroundImage: `url(${b.imageUrl})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "linear-gradient(180deg, rgba(9,3,20,0.2) 0%, rgba(9,3,20,0.85) 100%)",
-                  }}
-                />
+      {/* Search & Filter Controls */}
+      <BannerFilters
+        filters={filters}
+        onFilterChange={(newFilters) => setFilters((prev) => ({ ...prev, ...newFilters }))}
+        onRefresh={() => loadBanners(false)}
+        onCreateClick={handleCreateClick}
+        isRefreshing={refreshing}
+      />
 
-                <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 8 }}>
-                  <span
-                    style={{
-                      padding: "4px 10px",
-                      borderRadius: 8,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: b.active ? "#15803D" : "#991B1B",
-                      background: b.active ? "#DCFCE7" : "#FEF2F2",
-                    }}
-                  >
-                    {b.active ? "● Live on Website" : "○ Inactive"}
-                  </span>
-                </div>
+      {/* Main Banner Visual Grid */}
+      <BannerGrid
+        banners={filteredBanners}
+        loading={loading}
+        onEdit={handleEditClick}
+        onDuplicate={handleDuplicateClick}
+        onDelete={handleDeleteClick}
+        onPreview={handlePreviewClick}
+        onToggleActive={handleToggleActive}
+        onReorder={handleReorder}
+        onCreateClick={handleCreateClick}
+      />
 
-                <div style={{ position: "absolute", bottom: 14, left: 16, right: 16, zIndex: 10, color: "#fff" }}>
-                  <div style={{ fontSize: 15, fontWeight: 900, textTransform: "uppercase" }}>{b.title}</div>
-                  <div style={{ fontSize: 12, color: "#CBD5E1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {b.subtitle}
-                  </div>
-                </div>
-              </div>
+      {/* Create / Edit Form Drawer Modal */}
+      <BannerFormModal
+        isOpen={formModalOpen}
+        onClose={() => setFormModalOpen(false)}
+        onSave={handleSaveBanner}
+        initialBanner={editingBanner}
+        maxDisplayOrder={banners.length + 1}
+      />
 
-              <div
-                style={{
-                  padding: "12px 16px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  background: "#FAFAFA",
-                  borderTop: "1px solid #F1F5F9",
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B" }}>
-                  Sort Position: #{b.order}
-                </div>
+      {/* Live Preview Modal */}
+      <BannerPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        banner={previewBanner}
+      />
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => toggleActive(b.id)}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: 8,
-                      border: "1px solid #E2E8F0",
-                      background: "#ffffff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: b.active ? "#D97706" : "#16A34A",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    {b.active ? <EyeOff size={14} /> : <Eye size={14} />}
-                    {b.active ? "Deactivate" : "Activate"}
-                  </button>
+      {/* Delete Confirmation Dialog */}
+      <DeleteBannerDialog
+        isOpen={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleConfirmDelete}
+        banner={deletingBannerState}
+      />
 
-                  <button
-                    type="button"
-                    onClick={() => deleteBanner(b.id)}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: 8,
-                      border: "1px solid #FECACA",
-                      background: "#FEF2F2",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#DC2626",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Upload New Banner Card */}
-        <div
-          style={{
-            background: "#ffffff",
-            borderRadius: 20,
-            border: "1.5px solid #E2E8F0",
-            padding: "24px",
-            height: "fit-content",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
-          }}
-        >
-          <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 16px" }}>
-            Add New Hero Banner
-          </h2>
-
-          <form onSubmit={handleAddBanner} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 4, display: "block" }}>
-                Banner Headline Title *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. NATIONAL MUSIC CHAMPIONSHIP 2026"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                required
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1.5px solid #E2E8F0",
-                  fontSize: 13.5,
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 4, display: "block" }}>
-                Subtitle Description
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. India's biggest stage for aspiring singers"
-                value={newSubtitle}
-                onChange={(e) => setNewSubtitle(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1.5px solid #E2E8F0",
-                  fontSize: 13.5,
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 4, display: "block" }}>
-                Banner Image URL (Unsplash or Supabase Storage)
-              </label>
-              <input
-                type="url"
-                placeholder="https://images.unsplash.com/..."
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1.5px solid #E2E8F0",
-                  fontSize: 13.5,
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                border: "2px dashed #CBD5E1",
-                borderRadius: 16,
-                padding: "24px",
-                textAlign: "center",
-                background: "#F8FAFC",
-                cursor: "pointer",
-              }}
-            >
-              <UploadCloud size={32} color="#7C3AED" style={{ marginBottom: 8 }} />
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#334155" }}>
-                Click or Drag &amp; Drop to Upload Banner File
-              </div>
-              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>
-                Supports PNG, JPG, WEBP up to 5MB (16:9 ratio recommended)
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              style={{
-                padding: "13px 20px",
-                borderRadius: 12,
-                background: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)",
-                color: "#ffffff",
-                fontSize: 14,
-                fontWeight: 800,
-                border: "none",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                boxShadow: "0 4px 16px rgba(124, 58, 237, 0.35)",
-              }}
-            >
-              <Plus size={18} /> Publish Banner
-            </button>
-          </form>
-        </div>
-      </div>
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

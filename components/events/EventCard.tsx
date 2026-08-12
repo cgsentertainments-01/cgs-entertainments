@@ -14,6 +14,9 @@ export type EventType = {
   date: string;
   location: string;
   img: string;
+  short_description?: string;
+  description?: string;
+  status?: string;
 };
 
 export type EventData = EventType;
@@ -22,35 +25,46 @@ export function EventCard({ evt }: { evt: EventType }) {
   const [hovered, setHovered] = useState(false);
   const [btnHovered, setBtnHovered] = useState(false);
 
+  const shortDesc = evt.short_description || evt.description || "";
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         background: "#fff",
-        border: `1.5px solid ${hovered ? "#DDD6FE" : "#E5E7EB"}`,
+        border: `1.5px solid ${hovered ? "#C4B5FD" : "#E5E7EB"}`,
         borderRadius: 18,
         overflow: "hidden",
         boxShadow: hovered
-          ? "0 20px 48px rgba(109,40,217,0.15), 0 4px 12px rgba(0,0,0,0.06)"
-          : "0 1px 6px rgba(0,0,0,0.05)",
+          ? "0 20px 40px rgba(109,40,217,0.14), 0 4px 12px rgba(0,0,0,0.05)"
+          : "0 1px 6px rgba(0,0,0,0.04)",
         transform: hovered ? "translateY(-6px)" : "translateY(0)",
-        transition: "all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         display: "flex",
         flexDirection: "column",
+        height: "100%",
       }}
     >
-      {/* Banner image */}
-      <div style={{ position: "relative", width: "100%", paddingTop: "64%", overflow: "hidden", background: "#F3F4F6" }}>
+      {/* 4:3 Aspect Ratio Banner Image */}
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          paddingTop: "75%", /* 4:3 Aspect Ratio */
+          overflow: "hidden",
+          background: "#F3F4F6",
+        }}
+      >
         <Image
-          src={evt.img}
+          src={evt.img || "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=85"}
           alt={evt.title}
           fill
-          sizes="(max-width:768px) 100vw, 25vw"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
           style={{
             objectFit: "cover",
             objectPosition: "center",
-            transform: hovered ? "scale(1.08)" : "scale(1)",
+            transform: hovered ? "scale(1.06)" : "scale(1)",
             transition: "transform 0.45s ease",
           }}
         />
@@ -58,48 +72,80 @@ export function EventCard({ evt }: { evt: EventType }) {
           style={{
             position: "absolute",
             inset: 0,
-            background: "linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 55%)",
+            background: "linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 60%)",
             pointerEvents: "none",
           }}
         />
+        {/* Category Badge */}
         <span
           style={{
             position: "absolute",
-            top: 10,
-            left: 10,
-            padding: "5px 11px",
-            borderRadius: 7,
-            background: evt.badgeBg,
+            top: 12,
+            left: 12,
+            padding: "5px 12px",
+            borderRadius: 8,
+            background: evt.badgeBg || "#6D28D9",
             color: "#fff",
-            fontSize: 10,
+            fontSize: 10.5,
             fontWeight: 800,
-            letterSpacing: 1.2,
+            letterSpacing: 1.1,
             textTransform: "uppercase",
             boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
             backdropFilter: "blur(4px)",
           }}
         >
-          {evt.badge}
+          {evt.badge || "EVENT"}
         </span>
       </div>
 
-      {/* Card content */}
-      <div style={{ padding: "16px 16px 18px", display: "flex", flexDirection: "column", flex: 1, gap: 10 }}>
-        <h3 style={{ fontSize: 14.5, fontWeight: 700, color: "#111827", margin: 0, lineHeight: 1.4 }}>
+      {/* Card Content */}
+      <div style={{ padding: "18px 18px 20px", display: "flex", flexDirection: "column", flex: 1, gap: 10 }}>
+        <h3
+          style={{
+            fontSize: 15.5,
+            fontWeight: 800,
+            color: "#111827",
+            margin: 0,
+            lineHeight: 1.35,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            height: "2.7em",
+          }}
+        >
           {evt.title}
         </h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 16px" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#6B7280", fontWeight: 500 }}>
-            <Calendar size={13} color="#6D28D9" />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#4B5563", fontWeight: 600 }}>
+            <Calendar size={14} color="#6D28D9" style={{ flexShrink: 0 }} />
             {evt.date}
           </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#6B7280", fontWeight: 500 }}>
-            <MapPin size={13} color="#6D28D9" />
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#4B5563", fontWeight: 600 }}>
+            <MapPin size={14} color="#6D28D9" style={{ flexShrink: 0 }} />
             {evt.location}
           </span>
         </div>
 
-        {/* View details button */}
+        {shortDesc && (
+          <p
+            style={{
+              fontSize: 12.5,
+              color: "#6B7280",
+              margin: "2px 0 0",
+              lineHeight: 1.45,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {shortDesc}
+          </p>
+        )}
+
+        {/* View Details Button */}
         <Link
           href={`/events/${evt.slug}`}
           onMouseEnter={() => setBtnHovered(true)}
@@ -109,12 +155,12 @@ export function EventCard({ evt }: { evt: EventType }) {
             alignItems: "center",
             justifyContent: "center",
             gap: 6,
-            padding: "9px 0",
+            padding: "10px 0",
             marginTop: "auto",
             border: `1.5px solid ${btnHovered ? "#6D28D9" : "#DDD6FE"}`,
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 700,
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 800,
             color: btnHovered ? "#fff" : "#6D28D9",
             textDecoration: "none",
             background: btnHovered ? "linear-gradient(135deg, #6D28D9, #7C3AED)" : "#fff",
@@ -124,7 +170,7 @@ export function EventCard({ evt }: { evt: EventType }) {
           }}
         >
           View Details
-          {btnHovered && <ChevronRight size={14} />}
+          <ChevronRight size={15} style={{ transform: btnHovered ? "translateX(3px)" : "translateX(0)", transition: "transform 0.2s" }} />
         </Link>
       </div>
     </div>
