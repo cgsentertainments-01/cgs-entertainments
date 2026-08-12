@@ -136,9 +136,10 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // Fallback order generation for dev/test mode if keys not yet configured
-      console.warn("Notice: Razorpay credentials missing or incomplete in env. Generating order placeholder.");
-      razorpayOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      return NextResponse.json(
+        { error: "Razorpay environment variables (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET) are missing or incomplete on the server." },
+        { status: 500 }
+      );
     }
 
     // 4. Save/Update payment record in Supabase registration_payments

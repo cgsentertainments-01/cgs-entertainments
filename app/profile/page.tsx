@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { User, Mail, Phone, ShieldCheck, Calendar, Trophy, Sparkles, LogOut } from "lucide-react";
+import { User, Mail, Phone, ShieldCheck, Ticket, Calendar, Trophy, Sparkles, LogOut, ArrowRight } from "lucide-react";
 
 export default function ProfilePage() {
   const { user, signOut } = useAuth();
@@ -106,8 +107,70 @@ export default function ProfilePage() {
           </button>
         </div>
 
+        {/* Quick Access Card: Registrations & Payment History */}
+        <div
+          style={{
+            marginTop: 24,
+            background: "linear-gradient(135deg, #FAF5FF 0%, #EDE9FE 100%)",
+            border: "1.5px solid #C4B5FD",
+            borderRadius: 20,
+            padding: "24px 28px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 16,
+            boxShadow: "0 4px 16px rgba(109, 40, 217, 0.06)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: "#6D28D9",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Ticket size={24} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 2px" }}>
+                My Registrations &amp; Payment History
+              </h3>
+              <p style={{ fontSize: 13.5, color: "#6D28D9", margin: 0, fontWeight: 600 }}>
+                View your confirmed passes, payment transaction receipts, and entry QR codes synchronized from Supabase.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/my-registrations"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 22px",
+              borderRadius: 12,
+              background: "#6D28D9",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 800,
+              textDecoration: "none",
+              boxShadow: "0 4px 14px rgba(109, 40, 217, 0.3)",
+            }}
+          >
+            View Registrations <ArrowRight size={16} />
+          </Link>
+        </div>
+
         {/* Details Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 32 }} className="profile-details-grid">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 24 }} className="profile-details-grid">
           {/* Card 1: Account Information */}
           <div style={{ background: "#fff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "28px", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}>
             <h3 style={{ fontSize: 18, fontWeight: 900, color: "#111827", margin: "0 0 20px", display: "flex", alignItems: "center", gap: 10 }}>

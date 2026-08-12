@@ -34,51 +34,54 @@ export async function POST(request: Request) {
     // -------------------------------------------------------------------------
     // 1. STRICT SERVER-SIDE SIGNATURE VERIFICATION
     // -------------------------------------------------------------------------
-    if (secret) {
-      if (!orderId || !paymentId || !signature) {
-        return NextResponse.json(
-          { error: "Missing Razorpay payment parameters (order_id, payment_id, or signature)." },
-          { status: 400 }
-        );
-      }
+    if (!secret) {
+      return NextResponse.json(
+        { error: "RAZORPAY_KEY_SECRET is not configured on the server. Cannot perform signature verification." },
+        { status: 500 }
+      );
+    }
 
-      const isValid = verifyRazorpaySignature({
-        razorpayOrderId: orderId,
-        razorpayPaymentId: paymentId,
-        razorpaySignature: signature,
-      });
+    if (!orderId || !paymentId || !signature) {
+      return NextResponse.json(
+        { error: "Missing required Razorpay payment parameters: razorpay_order_id, razorpay_payment_id, and razorpay_signature are all required." },
+        { status: 400 }
+      );
+    }
 
-      if (!isValid) {
-        // Mark payment record as failed in database if available
-        if (supabase && registrationId) {
-          try {
+    const isValid = verifyRazorpaySignature({
+      razorpayOrderId: orderId,
+      razorpayPaymentId: paymentId,
+      razorpaySignature: signature,
+    });
+
+    if (!isValid) {
+      // Mark payment record as failed in database if available
+      if (supabase && registrationId) {
+        try {
+          await supabase
+            .from("registrations")
+            .update({ payment_status: "failed", updated_at: new Date().toISOString() })
+            .eq("id", registrationId);
+
+          if (orderId) {
             await supabase
-              .from("registrations")
-              .update({ payment_status: "failed", updated_at: new Date().toISOString() })
-              .eq("id", registrationId);
-
-            if (orderId) {
-              await supabase
-                .from("registration_payments")
-                .update({
-                  status: "failed",
-                  failure_reason: "Invalid HMAC SHA256 Signature",
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("razorpay_order_id", orderId);
-            }
-          } catch (dbErr) {
-            console.error("Error updating failed payment status in DB:", dbErr);
+              .from("registration_payments")
+              .update({
+                status: "failed",
+                failure_reason: "Invalid HMAC SHA256 Signature",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("razorpay_order_id", orderId);
           }
+        } catch (dbErr) {
+          console.error("Error updating failed payment status in DB:", dbErr);
         }
-
-        return NextResponse.json(
-          { error: "Invalid Razorpay payment signature. Payment verification failed." },
-          { status: 400 }
-        );
       }
-    } else {
-      console.warn("Notice: RAZORPAY_KEY_SECRET is not configured in env. Skipping strict signature check in development.");
+
+      return NextResponse.json(
+        { error: "Invalid Razorpay payment signature. Payment verification failed." },
+        { status: 400 }
+      );
     }
 
     // -------------------------------------------------------------------------
@@ -145,8 +148,8 @@ export async function POST(request: Request) {
         await supabase
           .from("registration_payments")
           .update({
-            razorpay_payment_id: paymentId || `pay_${Date.now()}`,
-            razorpay_signature: signature || null,
+            razorpay_payment_id: paymentId,
+            razorpay_signature: signature,
             status: "paid",
             paid_at: nowIso,
             updated_at: nowIso,
@@ -158,8 +161,8 @@ export async function POST(request: Request) {
           .insert({
             registration_id: registrationId,
             razorpay_order_id: orderId,
-            razorpay_payment_id: paymentId || `pay_${Date.now()}`,
-            razorpay_signature: signature || null,
+            razorpay_payment_id: paymentId,
+            razorpay_signature: signature,
             amount: reg.amount || 0,
             currency: "INR",
             status: "paid",
@@ -180,7 +183,7 @@ export async function POST(request: Request) {
       amount: reg.amount || 0,
       currency: "INR",
       gateway: "Razorpay",
-      gateway_transaction_id: paymentId || orderId || `tx_${Date.now()}`,
+      gateway_transaction_id: paymentId,
       status: "success",
       gateway_response: { orderId, paymentId, verified_at: nowIso },
       processed_at: nowIso,

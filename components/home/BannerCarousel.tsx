@@ -111,12 +111,7 @@ export function BannerCarousel({ banners }: BannerCarouselProps) {
           })}
         </div>
 
-        {/* Small Centered Pagination Dots (Rendered only if > 1 banner) */}
-        <BannerNavigation
-          total={total}
-          activeIndex={currentIndex}
-          onSelect={handleSelectDot}
-        />
+
       </div>
 
       {/* Styled Scoped CSS for Single-Slide Hero Carousel */}
@@ -291,49 +286,6 @@ export function BannerCarousel({ banners }: BannerCarouselProps) {
           }
         }
 
-        /* Minimalist Centered Pagination Dots Styling */
-        :global(.cgs-dots-container) {
-          position: absolute;
-          bottom: 20px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 20;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: rgba(15, 23, 42, 0.4);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          padding: 6px 14px;
-          border-radius: 20px;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-        }
-
-        @media (max-width: 640px) {
-          :global(.cgs-dots-container) {
-            bottom: 14px;
-            padding: 5px 10px;
-            gap: 6px;
-          }
-        }
-
-        :global(.cgs-indicator-dot) {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.45);
-          border: none;
-          padding: 0;
-          cursor: pointer;
-          transition: all 300ms ease;
-        }
-
-        :global(.cgs-indicator-dot.is-active) {
-          width: 24px;
-          border-radius: 6px;
-          background: #ffffff;
-          box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
-        }
       `}</style>
     </div>
   );

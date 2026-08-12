@@ -1,116 +1,240 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   CreditCard,
-  IndianRupee,
   Search,
   Download,
   Filter,
   CheckCircle2,
   Clock,
   RefreshCw,
-  ArrowUpRight,
+  AlertCircle,
+  XCircle,
 } from "lucide-react";
 
-interface PaymentRecord {
-  txnId: string;
-  participantName: string;
-  email: string;
-  eventName: string;
-  amount: string;
-  date: string;
-  gateway: string;
-  status: "Completed" | "Pending" | "Refunded";
+interface AdminRegistration {
+  id: string;
+  registration_number: string;
+  amount: number;
+  registration_status: string;
+  payment_status: string;
+  created_at: string;
+  events?: {
+    title?: string;
+    venue?: string;
+    city?: string;
+  };
+  participants?: {
+    full_name?: string;
+    email?: string;
+    phone?: string;
+    city?: string;
+  };
+  registration_payments?: Array<{
+    id?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    status?: string;
+    paid_at?: string;
+  }> | {
+    id?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    status?: string;
+    paid_at?: string;
+  };
 }
 
 export default function AdminPaymentsPage() {
-  const [payments] = useState<PaymentRecord[]>([
-    {
-      txnId: "TXN-99882201",
-      participantName: "Rathul Rathod",
-      email: "rathodmallesh2006@gmail.com",
-      eventName: "Hyderabad National Dance Championship",
-      amount: "₹1,499",
-      date: "15 May 2026, 14:32",
-      gateway: "Razorpay / UPI",
-      status: "Completed",
-    },
-    {
-      txnId: "TXN-99882202",
-      participantName: "Rathod Rahul",
-      email: "rathodrahulnayak2006@gmail.com",
-      eventName: "South India Fashion & Modeling Hunt",
-      amount: "₹1,999",
-      date: "17 May 2026, 11:15",
-      gateway: "Razorpay / Card",
-      status: "Completed",
-    },
-    {
-      txnId: "TXN-99882203",
-      participantName: "Mukollu Divyasri",
-      email: "mukolludivyasri@gmail.com",
-      eventName: "Voice of India Music Auditions",
-      amount: "₹1,199",
-      date: "18 May 2026, 16:45",
-      gateway: "Razorpay / NetBanking",
-      status: "Completed",
-    },
-    {
-      txnId: "TXN-99882204",
-      participantName: "Ananya Sharma",
-      email: "ananya.sharma@example.com",
-      eventName: "Acting Excellence Awards & Auditions",
-      amount: "₹1,299",
-      date: "20 May 2026, 09:20",
-      gateway: "Razorpay / UPI",
-      status: "Pending",
-    },
-  ]);
-
+  const [registrations, setRegistrations] = useState<AdminRegistration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const filteredPayments = payments.filter((p) => {
+  const fetchPayments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/registrations");
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setRegistrations(data.registrations || []);
+      } else {
+        setError(data.error || "Failed to load payments data.");
+      }
+    } catch (err: any) {
+      console.error("Error fetching admin payments:", err);
+      setError("Network error loading payments.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPayments();
+  }, [fetchPayments]);
+
+  const getRazorpayPaymentId = (reg: AdminRegistration) => {
+    if (Array.isArray(reg.registration_payments)) {
+      return reg.registration_payments[0]?.razorpay_payment_id || "-";
+    }
+    if (reg.registration_payments && typeof reg.registration_payments === "object") {
+      return reg.registration_payments.razorpay_payment_id || "-";
+    }
+    return "-";
+  };
+
+  const getRazorpayOrderId = (reg: AdminRegistration) => {
+    if (Array.isArray(reg.registration_payments)) {
+      return reg.registration_payments[0]?.razorpay_order_id || "-";
+    }
+    if (reg.registration_payments && typeof reg.registration_payments === "object") {
+      return reg.registration_payments.razorpay_order_id || "-";
+    }
+    return "-";
+  };
+
+  // Calculations for KPI metric cards
+  const totalRevenue = registrations.reduce((acc, r) => {
+    const isPaid = (r.payment_status || "").toLowerCase() === "paid";
+    return isPaid ? acc + Number(r.amount || 0) : acc;
+  }, 0);
+
+  const pendingAmount = registrations.reduce((acc, r) => {
+    const s = (r.payment_status || "").toLowerCase();
+    const isPending = s === "unpaid" || s === "pending" || s === "payment_pending";
+    return isPending ? acc + Number(r.amount || 0) : acc;
+  }, 0);
+
+  const pendingCount = registrations.filter((r) => {
+    const s = (r.payment_status || "").toLowerCase();
+    return s === "unpaid" || s === "pending" || s === "payment_pending";
+  }).length;
+
+  const paidCount = registrations.filter((r) => (r.payment_status || "").toLowerCase() === "paid").length;
+  const successRate = registrations.length > 0 ? ((paidCount / registrations.length) * 100).toFixed(1) : "100.0";
+
+  // Filtered rows
+  const filteredPayments = registrations.filter((r) => {
+    const searchLower = searchQuery.toLowerCase();
+    const payId = getRazorpayPaymentId(r).toLowerCase();
+    const orderId = getRazorpayOrderId(r).toLowerCase();
+
     const matchesSearch =
-      p.txnId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.participantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.eventName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "All" || p.status === statusFilter;
+      (r.registration_number || "").toLowerCase().includes(searchLower) ||
+      (r.participants?.full_name || "").toLowerCase().includes(searchLower) ||
+      (r.participants?.email || "").toLowerCase().includes(searchLower) ||
+      (r.events?.title || "").toLowerCase().includes(searchLower) ||
+      payId.includes(searchLower) ||
+      orderId.includes(searchLower);
+
+    const s = (r.payment_status || "unpaid").toLowerCase();
+    let normalizedStatus = "Pending";
+    if (s === "paid") normalizedStatus = "Completed";
+    else if (s === "failed") normalizedStatus = "Failed";
+    else if (s === "refunded") normalizedStatus = "Refunded";
+
+    const matchesStatus = statusFilter === "All" || normalizedStatus === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const formatCurrency = (amt: number) => {
+    return `₹${amt.toLocaleString("en-IN")}`;
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "N/A";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 4px", letterSpacing: -0.4 }}>
-          Payments &amp; Financial Revenue
-        </h1>
-        <p style={{ fontSize: 14, color: "#64748B", margin: 0, fontWeight: 500 }}>
-          Track registration fee collections, Razorpay transactions, and financial analytics.
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 4px", letterSpacing: -0.4 }}>
+            Payments &amp; Financial Revenue
+          </h1>
+          <p style={{ fontSize: 14, color: "#64748B", margin: 0, fontWeight: 500 }}>
+            Live payment collections and Razorpay transactions fetched dynamically from Supabase database.
+          </p>
+        </div>
+
+        <button
+          onClick={fetchPayments}
+          disabled={loading}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 18px",
+            background: "#ffffff",
+            border: "1.5px solid #E2E8F0",
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 800,
+            color: "#334155",
+            cursor: loading ? "not-allowed" : "pointer",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+          }}
+        >
+          <RefreshCw size={15} className={loading ? "animate-spin" : ""} color="#7C3AED" />
+          Refresh Data
+        </button>
       </div>
+
+      {error && (
+        <div
+          style={{
+            padding: "14px 18px",
+            borderRadius: 14,
+            background: "#FEF2F2",
+            border: "1.5px solid #FCA5A5",
+            color: "#991B1B",
+            fontSize: 14,
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <AlertCircle size={18} /> {error}
+        </div>
+      )}
 
       {/* 3 Metric Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
         <div style={{ background: "#ffffff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "20px 24px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Total Revenue Collected</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>₹3,45,680</div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#16A34A", marginTop: 4 }}>+18.6% vs last month</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Total Verified Revenue</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>{formatCurrency(totalRevenue)}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#16A34A", marginTop: 4 }}>{paidCount} confirmed payments</div>
         </div>
 
         <div style={{ background: "#ffffff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "20px 24px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Pending Transactions</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: "#D97706" }}>₹12,450</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginTop: 4 }}>4 transactions pending</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Pending Payments Amount</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#D97706" }}>{formatCurrency(pendingAmount)}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginTop: 4 }}>{pendingCount} pending registrations</div>
         </div>
 
         <div style={{ background: "#ffffff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "20px 24px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Successful Payments</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: "#16A34A" }}>98.4%</div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#16A34A", marginTop: 4 }}>Gateway uptime normal</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#64748B", marginBottom: 4 }}>Payment Success Rate</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#16A34A" }}>{successRate}%</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#16A34A", marginTop: 4 }}>Calculated from database records</div>
         </div>
       </div>
 
@@ -133,7 +257,7 @@ export default function AdminPaymentsPage() {
           <Search size={17} color="#94A3B8" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
           <input
             type="text"
-            placeholder="Search by Txn ID, name, email, or event..."
+            placeholder="Search by Payment ID, Order ID, name, email, or event..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -150,7 +274,7 @@ export default function AdminPaymentsPage() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {["All", "Completed", "Pending", "Refunded"].map((st) => (
+          {["All", "Completed", "Pending", "Failed", "Refunded"].map((st) => (
             <button
               key={st}
               type="button"
@@ -186,8 +310,8 @@ export default function AdminPaymentsPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
             <thead>
               <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", fontSize: 12, fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>
-                <th style={{ padding: "16px 20px" }}>Transaction ID</th>
-                <th style={{ padding: "16px 20px" }}>Payer Details</th>
+                <th style={{ padding: "16px 20px" }}>Razorpay Payment ID / Registration</th>
+                <th style={{ padding: "16px 20px" }}>Participant Details</th>
                 <th style={{ padding: "16px 20px" }}>Event</th>
                 <th style={{ padding: "16px 20px" }}>Gateway</th>
                 <th style={{ padding: "16px 20px" }}>Date</th>
@@ -197,33 +321,76 @@ export default function AdminPaymentsPage() {
             </thead>
 
             <tbody>
-              {filteredPayments.map((p) => (
-                <tr key={p.txnId} style={{ borderBottom: "1px solid #F1F5F9", fontSize: 13.5 }}>
-                  <td style={{ padding: "16px 20px", fontWeight: 800, color: "#6D28D9" }}>{p.txnId}</td>
-                  <td style={{ padding: "16px 20px" }}>
-                    <div style={{ fontWeight: 800, color: "#0F172A" }}>{p.participantName}</div>
-                    <div style={{ fontSize: 12, color: "#64748B" }}>{p.email}</div>
-                  </td>
-                  <td style={{ padding: "16px 20px", color: "#334155" }}>{p.eventName}</td>
-                  <td style={{ padding: "16px 20px", color: "#64748B" }}>{p.gateway}</td>
-                  <td style={{ padding: "16px 20px", color: "#64748B" }}>{p.date}</td>
-                  <td style={{ padding: "16px 20px", fontWeight: 900, color: "#0F172A" }}>{p.amount}</td>
-                  <td style={{ padding: "16px 20px" }}>
-                    <span
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 8,
-                        fontSize: 11.5,
-                        fontWeight: 800,
-                        color: p.status === "Completed" ? "#16A34A" : p.status === "Pending" ? "#D97706" : "#DC2626",
-                        background: p.status === "Completed" ? "#DCFCE7" : p.status === "Pending" ? "#FEF3C7" : "#FEF2F2",
-                      }}
-                    >
-                      {p.status}
-                    </span>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: "40px 20px", textAlign: "center", color: "#64748B", fontWeight: 600 }}>
+                    Loading payment records from database...
                   </td>
                 </tr>
-              ))}
+              ) : filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: "40px 20px", textAlign: "center", color: "#64748B", fontWeight: 600 }}>
+                    No payment records found matching your filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredPayments.map((r) => {
+                  const payId = getRazorpayPaymentId(r);
+                  const orderId = getRazorpayOrderId(r);
+                  const rawStatus = (r.payment_status || "unpaid").toLowerCase();
+                  let displayStatus = "Pending";
+                  if (rawStatus === "paid") displayStatus = "Completed";
+                  else if (rawStatus === "failed") displayStatus = "Failed";
+                  else if (rawStatus === "refunded") displayStatus = "Refunded";
+
+                  return (
+                    <tr key={r.id} style={{ borderBottom: "1px solid #F1F5F9", fontSize: 13.5 }}>
+                      <td style={{ padding: "16px 20px" }}>
+                        <div style={{ fontWeight: 800, color: "#6D28D9", fontFamily: "monospace" }}>
+                          {payId !== "-" ? payId : r.registration_number || r.id}
+                        </div>
+                        {orderId !== "-" && (
+                          <div style={{ fontSize: 11, color: "#94A3B8", fontFamily: "monospace", marginTop: 2 }}>
+                            Order: {orderId}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "16px 20px" }}>
+                        <div style={{ fontWeight: 800, color: "#0F172A" }}>{r.participants?.full_name || "Participant"}</div>
+                        <div style={{ fontSize: 12, color: "#64748B" }}>{r.participants?.email || "-"}</div>
+                      </td>
+                      <td style={{ padding: "16px 20px", color: "#334155", fontWeight: 700 }}>{r.events?.title || "Event"}</td>
+                      <td style={{ padding: "16px 20px", color: "#64748B" }}>Razorpay</td>
+                      <td style={{ padding: "16px 20px", color: "#64748B" }}>{formatDate(r.created_at)}</td>
+                      <td style={{ padding: "16px 20px", fontWeight: 900, color: "#0F172A" }}>{formatCurrency(Number(r.amount || 0))}</td>
+                      <td style={{ padding: "16px 20px" }}>
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 8,
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            color:
+                              displayStatus === "Completed"
+                                ? "#16A34A"
+                                : displayStatus === "Pending"
+                                ? "#D97706"
+                                : "#DC2626",
+                            background:
+                              displayStatus === "Completed"
+                                ? "#DCFCE7"
+                                : displayStatus === "Pending"
+                                ? "#FEF3C7"
+                                : "#FEF2F2",
+                          }}
+                        >
+                          {displayStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
