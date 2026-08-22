@@ -169,6 +169,7 @@ export async function PUT(
       contact_info,
       seo,
       homepage_settings,
+      form_config,
     } = body;
 
     // 5. Check slug uniqueness if slug is changing
@@ -212,12 +213,7 @@ export async function PUT(
     const categoryId =
       category_id || (await getOrCreateCategoryId(supabase, category || "Dance"));
 
-    // 7. Build the update payload — strictly matching actual events table columns:
-    //    id, title, slug, short_description, description, category_id,
-    //    event_date, registration_start_date, registration_deadline,
-    //    venue, address, city, state, pincode,
-    //    banner_image, thumbnail_image, registration_fee,
-    //    max_participants, status, is_featured, is_published, terms_conditions, updated_at
+    // 7. Build the update payload
     const updatePayload: Record<string, unknown> = {
       title: title || body.title,
       event_date: isoDate,
@@ -240,7 +236,7 @@ export async function PUT(
     if (categoryId) updatePayload.category_id = categoryId;
     if (address !== undefined) updatePayload.address = address;
     if (pincode) updatePayload.pincode = pincode;
-    // NOTE: google_maps_url and mobile_banner_image are NOT in the events schema — omitted
+    if (form_config !== undefined) updatePayload.form_config = form_config;
 
     const bannerImg = banner_image || img;
     if (bannerImg) updatePayload.banner_image = bannerImg;
@@ -260,9 +256,9 @@ export async function PUT(
     const { data: updatedRow, error: sbErr } = await supabase
       .from("events")
       .update(updatePayload)
-      .eq("id", eventUUID)       // strict UUID match — never touches other rows
-      .select("*")               // fetch the saved row back
-      .single();                 // fails if no row matched
+      .eq("id", eventUUID)
+      .select("*")
+      .single();
 
     if (sbErr) {
       console.error(`Supabase UPDATE error for event ${eventUUID}:`, sbErr);
@@ -360,6 +356,25 @@ export async function DELETE(
       // Resolve to UUID first so we never accidentally delete by slug collision
       const resolved = await resolveEventId(supabase, id);
       if (resolved) {
+        // Check foreign key relationship: registrations table
+        const { count: regCount } = await supabase
+          .from("registrations")
+          .select("id", { count: "exact", head: true })
+          .eq("event_id", resolved.uuid);
+
+        if (regCount && regCount > 0) {
+          console.warn(`[DELETE BLOCKED] Event ${resolved.uuid} has ${regCount} existing registration(s).`);
+          return NextResponse.json(
+            {
+              success: false,
+              hasRegistrations: true,
+              count: regCount,
+              error: `This event has ${regCount} existing registration(s) and cannot be permanently deleted. You can deactivate/archive it instead.`,
+            },
+            { status: 409 }
+          );
+        }
+
         const { error: delErr } = await supabase
           .from("events")
           .delete()

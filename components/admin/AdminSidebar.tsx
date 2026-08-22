@@ -15,6 +15,7 @@ import {
   Globe,
   Crown,
   X,
+  UserCheck,
 } from "lucide-react";
 
 interface AdminSidebarProps {
@@ -29,6 +30,7 @@ export function AdminSidebar({ mobileOpen = false, onCloseMobile }: AdminSidebar
     { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { label: "Events", href: "/admin/events", icon: Calendar },
     { label: "Banner", href: "/admin/banner", icon: ImageIcon },
+    { label: "Guests & Judges", href: "/admin/guests-judges", icon: UserCheck },
     { label: "Categories", href: "/admin/categories", icon: Globe },
     { label: "Participants", href: "/admin/participants", icon: Users },
     { label: "Payments", href: "/admin/payments", icon: CreditCard },

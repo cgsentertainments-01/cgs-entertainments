@@ -9,6 +9,7 @@ import {
 } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
 import { verifyAdminApi } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 // Helper to find or create category ID in event_categories table
 async function getOrCreateCategoryId(categoryName: string): Promise<string | null> {
@@ -218,6 +219,7 @@ export async function POST(request: Request) {
       contact_info,
       seo,
       homepage_settings,
+      form_config,
       status,
       is_featured,
       is_published,
@@ -314,6 +316,7 @@ export async function POST(request: Request) {
       contact_info: contact_info || {},
       seo: seo || {},
       homepage_settings: homepage_settings || { show_on_homepage: true, is_featured: Boolean(is_featured) },
+      form_config: form_config || undefined,
       status: status === "Upcoming" ? "registration_open" : status?.toLowerCase() || "registration_open",
       is_featured: Boolean(is_featured),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
@@ -343,6 +346,7 @@ export async function POST(request: Request) {
       terms_conditions: newEvent.terms_conditions,
     };
 
+    if (form_config) payloadToInsert.form_config = form_config;
     if (resolvedCategoryId) payloadToInsert.category_id = resolvedCategoryId;
 
     // CRITICAL: Always perform INSERT (never UPSERT) for new event creation!
@@ -383,20 +387,74 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Missing event ID" }, { status: 400 });
     }
 
-    // CRITICAL: Only delete WHERE id = selectedEventId
-    if (supabase) {
-      try {
-        await supabase.from("events").delete().eq("id", id);
-      } catch (err) {
-        console.warn("Supabase delete warning:", err);
-      }
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase admin client unavailable" }, { status: 500 });
     }
 
-    deleteFromStore(id);
-    revalidateEventCaches(id);
+    // 1. Resolve exact event row by UUID or slug
+    const { data: eventRow, error: fetchErr } = await supabase
+      .from("events")
+      .select("id, title, status")
+      .or(`id.eq.${id},slug.eq.${id}`)
+      .maybeSingle();
 
-    return NextResponse.json({ success: true });
+    if (fetchErr) {
+      console.error("Supabase fetch event error before delete:", fetchErr);
+    }
+
+    if (!eventRow) {
+      deleteFromStore(id);
+      revalidateEventCaches(id);
+      return NextResponse.json({ success: true, message: "Event not found in DB or already removed" });
+    }
+
+    const eventUUID = eventRow.id;
+
+    // 2. Check foreign key relationship: registrations table
+    const { count: regCount, error: regCountErr } = await supabase
+      .from("registrations")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", eventUUID);
+
+    if (regCountErr) {
+      console.warn("Notice checking registrations count before event delete:", regCountErr.message);
+    }
+
+    if (regCount && regCount > 0) {
+      console.warn(`[DELETE BLOCKED] Event '${eventRow.title}' (${eventUUID}) has ${regCount} existing registration(s).`);
+      return NextResponse.json(
+        {
+          success: false,
+          hasRegistrations: true,
+          count: regCount,
+          error: `This event has ${regCount} existing registration(s) and cannot be permanently deleted. You can deactivate/archive it instead.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 3. Permanent deletion in Supabase using UUID primary key
+    const { error: delErr } = await supabase
+      .from("events")
+      .delete()
+      .eq("id", eventUUID);
+
+    if (delErr) {
+      console.error(`Supabase DELETE error for event ${eventUUID}:`, delErr);
+      return NextResponse.json(
+        { success: false, error: `Unable to delete event from database: ${delErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    deleteFromStore(eventUUID);
+    deleteFromStore(id);
+    revalidateEventCaches(eventUUID, id);
+
+    return NextResponse.json({ success: true, permanent: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("DELETE /api/events exception:", err);
+    return NextResponse.json({ error: err.message || "Failed to delete event" }, { status: 500 });
   }
 }

@@ -1,4 +1,5 @@
 import { revalidatePath, revalidateTag } from "next/cache";
+import { EventFormConfig } from "@/types/event-config";
 
 export interface DBEvent {
   id: string;
@@ -60,6 +61,7 @@ export interface DBEvent {
   contact_info?: any;
   seo?: any;
   homepage_settings?: any;
+  form_config?: EventFormConfig;
   status: string;
   is_featured?: boolean;
   is_published: boolean;

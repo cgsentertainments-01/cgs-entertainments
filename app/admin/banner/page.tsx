@@ -1,7 +1,5 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Banner, BannerFilterState, BannerFormData, BannerStats as BannerStatsType } from "@/types/banner";
 import {

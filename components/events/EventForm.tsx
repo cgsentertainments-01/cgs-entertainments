@@ -28,6 +28,8 @@ import {
   Check,
 } from "lucide-react";
 import { EventItem, createEvent, updateEvent, getEventByIdOrSlug } from "@/services/event.service";
+import { EventFormConfig, getDefaultFormConfig } from "@/types/event-config";
+import { FormConfigEditor } from "@/components/events/FormConfigEditor";
 
 interface ScheduleItem {
   time: string;
@@ -159,6 +161,9 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   const [showOnHomepage, setShowOnHomepage] = useState(true);
   const [showRegButton, setShowRegButton] = useState(true);
 
+  // Dynamic Registration Form Config
+  const [formConfig, setFormConfig] = useState<EventFormConfig>(getDefaultFormConfig(categoryName));
+
   // Submit & Guard State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -220,6 +225,11 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     if (evt.required_documents) setRequiredDocs(evt.required_documents);
     if (evt.participation_categories) setSelectedCats(evt.participation_categories);
     if (evt.dance_styles) setSelectedStyles(evt.dance_styles);
+    if (evt.form_config) {
+      setFormConfig(evt.form_config);
+    } else {
+      setFormConfig(getDefaultFormConfig(evt.category || "Dance"));
+    }
   };
 
   // Fetch Category / Style Options and Initial Event Data for Edit Mode
@@ -380,6 +390,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         contact_info: { name: contactName, phone: contactPhone, email: contactEmail, whatsapp: contactWhatsapp },
         seo: { title: seoTitle || title, description: seoDescription || shortDescription, keywords: seoKeywords, og_image: bannerImg },
         homepage_settings: { show_on_homepage: showOnHomepage, is_featured: isFeatured, display_order: 1, show_registration_button: showRegButton },
+        form_config: formConfig,
         status: isPublishAction ? "registration_open" : "draft",
         is_featured: isFeatured,
         is_published: isPublishAction,
@@ -826,6 +837,14 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                 </div>
               </div>
             </div>
+
+            {/* DYNAMIC REGISTRATION FORM CONFIGURATION */}
+            <FormConfigEditor
+              formConfig={formConfig}
+              onChange={setFormConfig}
+              eventTitle={title}
+              categoryName={categoryName}
+            />
 
             {/* SECTION 8: Rules & Terms */}
             <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 18, padding: "24px" }}>

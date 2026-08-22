@@ -20,6 +20,27 @@ export function getRazorpayInstance(): Razorpay | null {
 }
 
 /**
+ * Safely logs Razorpay configuration status without exposing secrets.
+ */
+export function logRazorpayConfig(): void {
+  const key_id = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
+  const key_secret = process.env.RAZORPAY_KEY_SECRET || "";
+
+  const isConfigured = Boolean(key_id && key_secret);
+  const keyType = key_id.startsWith("rzp_live_")
+    ? "live"
+    : key_id.startsWith("rzp_test_")
+      ? "test"
+      : key_id
+        ? "unknown"
+        : "missing";
+
+  console.log(`Razorpay key configured: ${Boolean(key_id)}`);
+  console.log(`Razorpay key type: ${keyType}`);
+  console.log(`Razorpay secret configured: ${Boolean(key_secret)}`);
+}
+
+/**
  * Verifies the Razorpay payment signature received from client callback server-side using HMAC-SHA256.
  */
 export function verifyRazorpaySignature({
@@ -41,10 +62,14 @@ export function verifyRazorpaySignature({
     .update(`${razorpayOrderId}|${razorpayPaymentId}`)
     .digest("hex");
 
-  return crypto.timingSafeEqual(
-    Buffer.from(generatedSignature),
-    Buffer.from(razorpaySignature)
-  );
+  const genBuf = Buffer.from(generatedSignature);
+  const sigBuf = Buffer.from(razorpaySignature);
+
+  if (genBuf.length !== sigBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(genBuf, sigBuf);
 }
 
 /**

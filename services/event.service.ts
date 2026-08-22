@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { EventFormConfig, getDefaultFormConfig } from "@/types/event-config";
 
 export interface EventItem {
   id: string;
@@ -61,6 +62,7 @@ export interface EventItem {
   contact_info?: any;
   seo?: any;
   homepage_settings?: any;
+  form_config?: EventFormConfig;
   status: string;
   is_featured?: boolean;
   is_published: boolean;
@@ -127,6 +129,22 @@ export function transformDbEvent(evt: any): EventItem {
 
   const rulesText = evt.rules_regulations || evt.rules || evt.terms_conditions || "";
 
+  let parsedFormConfig: EventFormConfig | undefined = undefined;
+  if (evt.form_config) {
+    if (typeof evt.form_config === "string") {
+      try {
+        parsedFormConfig = JSON.parse(evt.form_config);
+      } catch (e) {
+        parsedFormConfig = undefined;
+      }
+    } else if (typeof evt.form_config === "object") {
+      parsedFormConfig = evt.form_config;
+    }
+  }
+  if (!parsedFormConfig || !parsedFormConfig.participationTypes || parsedFormConfig.participationTypes.length === 0) {
+    parsedFormConfig = getDefaultFormConfig(categoryName);
+  }
+
   return {
     id: String(evt.id),
     title: evt.title || "",
@@ -188,6 +206,7 @@ export function transformDbEvent(evt: any): EventItem {
     contact_info: evt.contact_info || { name: "CGS Event Team", phone: "+91 98765 43210", email: "cgsentertainments01@gmail.com" },
     seo: evt.seo || { title: evt.title, description: evt.short_description || evt.title },
     homepage_settings: evt.homepage_settings || { show_on_homepage: true, is_featured: Boolean(evt.is_featured) },
+    form_config: parsedFormConfig,
     status: evt.status || "registration_open",
     is_featured: Boolean(evt.is_featured),
     is_published: evt.is_published !== undefined ? Boolean(evt.is_published) : true,

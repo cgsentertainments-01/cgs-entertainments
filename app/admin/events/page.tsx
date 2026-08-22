@@ -55,7 +55,9 @@ export default function AdminEventsPage() {
   const [statusFilter, setStatusFilter] = useState("All");
 
   // Actions State
-  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState<EventItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cannotDeleteMsg, setCannotDeleteMsg] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
@@ -142,22 +144,59 @@ export default function AdminEventsPage() {
     }
   };
 
-  // Action: Confirm Delete Event
-  const confirmDeleteEvent = async () => {
-    if (!deletingEventId) return;
+  // Quick Action: Deactivate / Archive Event
+  const handleArchiveEvent = async (evt: EventItem) => {
     setIsDeleting(true);
+    setDeleteError(null);
     try {
-      const res = await fetch(`/api/events?id=${encodeURIComponent(deletingEventId)}`, {
+      const res = await fetch(`/api/events/${encodeURIComponent(evt.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...evt, status: "archived", is_published: false }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setActionSuccessMsg(`Event "${evt.title}" has been archived/deactivated.`);
+        setDeletingEvent(null);
+        setCannotDeleteMsg(null);
+        fetchAdminEvents();
+        setTimeout(() => setActionSuccessMsg(null), 3000);
+      } else {
+        setDeleteError(data.error || "Failed to deactivate event.");
+      }
+    } catch (err: any) {
+      console.error("Error deactivating event:", err);
+      setDeleteError(err.message || "Failed to deactivate event.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Action: Confirm Permanent Delete Event (for events with 0 registrations)
+  const confirmDeleteEvent = async () => {
+    if (!deletingEvent) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/events?id=${encodeURIComponent(deletingEvent.id)}`, {
         method: "DELETE",
       });
-      if (res.ok) {
-        setActionSuccessMsg("Event deleted successfully.");
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setActionSuccessMsg(`Event "${deletingEvent.title}" deleted successfully.`);
+        setDeletingEvent(null);
+        setCannotDeleteMsg(null);
         fetchAdminEvents();
-        setDeletingEventId(null);
         setTimeout(() => setActionSuccessMsg(null), 3000);
+      } else if (res.status === 409 || data.hasRegistrations) {
+        setCannotDeleteMsg(data.error || "This event has existing registrations and cannot be permanently deleted. You can deactivate/archive it instead.");
+      } else {
+        setDeleteError(data.error || "Failed to delete event from database.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error deleting event:", err);
+      setDeleteError(err.message || "Network error deleting event.");
     } finally {
       setIsDeleting(false);
     }
@@ -173,12 +212,16 @@ export default function AdminEventsPage() {
       statusFilter === "All" ||
       evt.status.toLowerCase() === statusFilter.toLowerCase() ||
       (statusFilter === "Published" && evt.is_published) ||
-      (statusFilter === "Draft" && !evt.is_published);
+      (statusFilter === "Draft" && !evt.is_published) ||
+      (statusFilter === "Archived" && (evt.status.toLowerCase() === "archived" || evt.status.toLowerCase() === "inactive"));
 
     return matchesSearch && matchesStatus;
   });
 
   const getStatusBadgeStyle = (status: string, isPublished: boolean) => {
+    if (status.toLowerCase() === "archived" || status.toLowerCase() === "inactive") {
+      return { label: "Archived", color: "#D97706", bg: "#FEF3C7" };
+    }
     if (!isPublished) {
       return { label: "Draft", color: "#64748B", bg: "#F1F5F9" };
     }
@@ -588,7 +631,11 @@ export default function AdminEventsPage() {
                         {/* Delete Event */}
                         <button
                           type="button"
-                          onClick={() => setDeletingEventId(evt.id)}
+                          onClick={() => {
+                            setDeletingEvent(evt);
+                            setDeleteError(null);
+                            setCannotDeleteMsg(null);
+                          }}
                           title="Delete Event"
                           style={{
                             padding: 6,
@@ -613,14 +660,14 @@ export default function AdminEventsPage() {
         </div>
       )}
 
-      {/* Delete Event Confirmation Modal */}
-      {deletingEventId && (
+      {/* Smart Delete / Deactivate Event Confirmation Modal */}
+      {deletingEvent && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(5px)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -631,44 +678,115 @@ export default function AdminEventsPage() {
           <div
             style={{
               background: "#fff",
-              borderRadius: 20,
+              borderRadius: 24,
               width: "100%",
-              maxWidth: 440,
-              padding: 24,
-              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+              maxWidth: 480,
+              padding: 28,
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <AlertTriangle size={22} color="#DC2626" />
-              </div>
+            {deletingEvent.participantsCount > 0 || cannotDeleteMsg ? (
+              /* CASE: Event HAS existing registrations -> Offer Deactivate / Archive */
               <div>
-                <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>Delete Event?</h3>
-                <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>This action may affect registrations and payment records.</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <AlertTriangle size={24} color="#D97706" />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
+                      Event Cannot Be Permanently Deleted
+                    </h3>
+                    <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>
+                      Event: <strong>{deletingEvent.title}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 14, color: "#334155", lineHeight: 1.6, marginBottom: 20, background: "#FFFBEB", border: "1px solid #FDE68A", padding: 14, borderRadius: 12 }}>
+                  This event has <strong>{deletingEvent.participantsCount || "existing"}</strong> registered participant(s) and payment records. It cannot be permanently deleted to prevent financial data corruption.
+                  <div style={{ marginTop: 8, fontWeight: 700, color: "#92400E" }}>
+                    You can deactivate / archive it instead to hide it from new registrations while preserving history.
+                  </div>
+                </div>
+
+                {deleteError && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: 12, color: "#DC2626", fontSize: 13, fontWeight: 700, marginBottom: 16 }}>
+                    {deleteError}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletingEvent(null);
+                      setDeleteError(null);
+                      setCannotDeleteMsg(null);
+                    }}
+                    style={{ padding: "11px 20px", borderRadius: 12, border: "1px solid #CBD5E1", background: "#fff", fontSize: 13.5, fontWeight: 700, color: "#334155", cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleArchiveEvent(deletingEvent)}
+                    disabled={isDeleting}
+                    style={{ padding: "11px 22px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #D97706, #B45309)", fontSize: 13.5, fontWeight: 800, color: "#fff", cursor: "pointer" }}
+                  >
+                    {isDeleting ? "Deactivating..." : "Deactivate / Archive Event"}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* CASE: Event HAS NO registrations -> Allow Permanent Supabase Deletion */
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <AlertTriangle size={24} color="#DC2626" />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
+                      Are you sure you want to delete this event?
+                    </h3>
+                    <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>
+                      Event: <strong>{deletingEvent.title}</strong>
+                    </div>
+                  </div>
+                </div>
 
-            <div style={{ fontSize: 13.5, color: "#475569", lineHeight: 1.5, marginBottom: 20 }}>
-              Are you sure you want to permanently delete this event? Existing participant registrations will remain in history.
-            </div>
+                <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.5, marginBottom: 20 }}>
+                  This will permanently delete this event from Supabase database. This action cannot be undone.
+                </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => setDeletingEventId(null)}
-                style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", fontSize: 13.5, fontWeight: 700, color: "#334155", cursor: "pointer" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteEvent}
-                disabled={isDeleting}
-                style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#DC2626", fontSize: 13.5, fontWeight: 800, color: "#fff", cursor: "pointer" }}
-              >
-                {isDeleting ? "Deleting..." : "Delete Event"}
-              </button>
-            </div>
+                {deleteError && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: 12, color: "#DC2626", fontSize: 13, fontWeight: 700, marginBottom: 16 }}>
+                    {deleteError}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletingEvent(null);
+                      setDeleteError(null);
+                      setCannotDeleteMsg(null);
+                    }}
+                    style={{ padding: "11px 20px", borderRadius: 12, border: "1px solid #CBD5E1", background: "#fff", fontSize: 13.5, fontWeight: 700, color: "#334155", cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeleteEvent}
+                    disabled={isDeleting}
+                    style={{ padding: "11px 22px", borderRadius: 12, border: "none", background: "#DC2626", fontSize: 13.5, fontWeight: 800, color: "#fff", cursor: "pointer" }}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete Event"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

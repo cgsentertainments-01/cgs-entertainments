@@ -508,46 +508,44 @@ export default function MyRegistrationsPage() {
                     >
                       {formatAmount(reg.amount)}
                     </div>
-                    {eventSlug ? (
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                       <Link
-                        href={`/events/${eventSlug}`}
+                        href={`/registration-success?registrationId=${encodeURIComponent(reg.registration_number)}`}
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 6,
-                          padding: "8px 16px",
-                          background: "#F3E8FF",
-                          color: "#6D28D9",
-                          borderRadius: 12,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          textDecoration: "none",
-                          transition: "background 0.15s",
-                        }}
-                        onMouseOver={(e) => ((e.currentTarget as HTMLAnchorElement).style.background = "#EDE9FE")}
-                        onMouseOut={(e) => ((e.currentTarget as HTMLAnchorElement).style.background = "#F3E8FF")}
-                      >
-                        View Details <ArrowRight size={14} />
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/events"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "8px 16px",
-                          background: "#F3E8FF",
-                          color: "#6D28D9",
+                          padding: "8px 14px",
+                          background: "#6D28D9",
+                          color: "#FFFFFF",
                           borderRadius: 12,
                           fontSize: 13,
                           fontWeight: 800,
                           textDecoration: "none",
                         }}
                       >
-                        View Events <ArrowRight size={14} />
+                        View QR Pass
                       </Link>
-                    )}
+                      {eventSlug && (
+                        <Link
+                          href={`/events/${eventSlug}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "8px 14px",
+                            background: "#F3E8FF",
+                            color: "#6D28D9",
+                            borderRadius: 12,
+                            fontSize: 13,
+                            fontWeight: 800,
+                            textDecoration: "none",
+                          }}
+                        >
+                          View Event <ArrowRight size={14} />
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

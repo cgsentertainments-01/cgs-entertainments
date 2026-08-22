@@ -21,9 +21,10 @@ export async function GET(
       .select(`
         *,
         events ( id, title, slug, venue, address, city, state, event_date, banner_image, thumbnail_image, registration_fee ),
-        participants ( id, participant_number, full_name, email, phone, city, state ),
+        participants ( id, participant_number, full_name, email, phone, city, state, profile_photo ),
         event_categories ( id, name ),
-        dance_styles ( id, name )
+        dance_styles ( id, name ),
+        registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
       `)
       .or(`id.eq.${id},registration_number.eq.${id},qr_token.eq.${id}`)
       .maybeSingle();

@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { GuestsJudgesSection } from "@/components/guests/GuestsJudgesSection";
 import {
   Calendar,
   MapPin,
@@ -457,36 +458,7 @@ export default function EventDetailPage() {
           {/* ── LEFT COLUMN ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
             {/* 1. GUESTS & JUDGES SECTION */}
-            <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "24px 28px", boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 900, color: "#111827", margin: 0, position: "relative", display: "inline-block" }}>
-                    Guests &amp; Judges
-                    <span style={{ position: "absolute", bottom: -6, left: 0, width: 28, height: 3, background: "#6D28D9", borderRadius: 99 }} />
-                  </h2>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Link href="#view-all" style={{ fontSize: 13, color: "#6D28D9", fontWeight: 700, textDecoration: "none" }}>
-                    View All
-                  </Link>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid #E5E7EB", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <ChevronLeft size={15} color="#6B7280" />
-                    </button>
-                    <button style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid #E5E7EB", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <ChevronRight size={15} color="#6B7280" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Judges Row */}
-              <div style={{ display: "flex", gap: 20, overflowX: "auto", paddingBottom: 8 }} className="hide-scroll">
-                {GUESTS_AND_JUDGES.map((person, i) => (
-                  <JudgeCard key={i} person={person} />
-                ))}
-              </div>
-            </div>
+            <GuestsJudgesSection />
 
             {/* 2. ABOUT THE EVENT SECTION */}
             <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 22, padding: "28px", boxShadow: "0 2px 12px rgba(0,0,0,0.03)" }}>

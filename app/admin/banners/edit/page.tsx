@@ -10,5 +10,5 @@ export default function AdminBannersEditPage() {
     router.replace("/admin/banner");
   }, [router]);
 
-  return null;
+  return <div style={{ padding: 20 }}>Redirecting to Banners...</div>;
 }
