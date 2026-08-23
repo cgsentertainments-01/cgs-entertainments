@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     if (supabase) {
       let query = supabase
         .from("event_categories")
-        .select("*")
+        .select("id, name, slug, description, image, is_active, display_order, created_at, updated_at")
         .order("display_order", { ascending: true });
 
       if (!includeInactive) {

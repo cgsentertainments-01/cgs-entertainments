@@ -114,7 +114,7 @@ export default function AdminEventsPage() {
       const res = await fetch(`/api/events/${encodeURIComponent(evt.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...evt, is_published: updatedPublish }),
+        body: JSON.stringify({ id: evt.id, is_published: updatedPublish }),
       });
       if (res.ok) {
         setActionSuccessMsg(`Event "${evt.title}" is now ${updatedPublish ? "Published" : "Unpublished"}.`);
@@ -132,7 +132,7 @@ export default function AdminEventsPage() {
       const res = await fetch(`/api/events/${encodeURIComponent(evt.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...evt, status: "cancelled", is_published: false }),
+        body: JSON.stringify({ id: evt.id, status: "cancelled", is_published: false }),
       });
       if (res.ok) {
         setActionSuccessMsg(`Event "${evt.title}" marked as Cancelled.`);
@@ -152,7 +152,7 @@ export default function AdminEventsPage() {
       const res = await fetch(`/api/events/${encodeURIComponent(evt.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...evt, status: "archived", is_published: false }),
+        body: JSON.stringify({ id: evt.id, status: "registration_closed", is_published: false }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -174,28 +174,37 @@ export default function AdminEventsPage() {
 
   // Action: Confirm Permanent Delete Event (for events with 0 registrations)
   const confirmDeleteEvent = async () => {
-    if (!deletingEvent) return;
+    if (!deletingEvent || !deletingEvent.id) return;
+    const targetId = deletingEvent.id;
+    console.log("DELETE EVENT ID:", targetId);
+
     setIsDeleting(true);
     setDeleteError(null);
+    setCannotDeleteMsg(null);
+
     try {
-      const res = await fetch(`/api/events?id=${encodeURIComponent(deletingEvent.id)}`, {
+      const res = await fetch(`/api/events?id=${encodeURIComponent(targetId)}`, {
         method: "DELETE",
       });
       const data = await res.json();
 
-      if (res.ok && data.success) {
-        setActionSuccessMsg(`Event "${deletingEvent.title}" deleted successfully.`);
+      if (res.ok && data.success && data.deletedEvent) {
+        setActionSuccessMsg(`Event "${deletingEvent.title}" deleted successfully from database.`);
         setDeletingEvent(null);
         setCannotDeleteMsg(null);
-        fetchAdminEvents();
-        setTimeout(() => setActionSuccessMsg(null), 3000);
+        await fetchAdminEvents();
+        setTimeout(() => setActionSuccessMsg(null), 4000);
       } else if (res.status === 409 || data.hasRegistrations) {
-        setCannotDeleteMsg(data.error || "This event has existing registrations and cannot be permanently deleted. You can deactivate/archive it instead.");
+        setCannotDeleteMsg(
+          data.error ||
+            "This event has existing registrations and cannot be permanently deleted. You can deactivate/archive it instead."
+        );
       } else {
+        console.error("EVENT DELETE ERROR:", data.error);
         setDeleteError(data.error || "Failed to delete event from database.");
       }
     } catch (err: any) {
-      console.error("Error deleting event:", err);
+      console.error("EVENT DELETE ERROR:", err);
       setDeleteError(err.message || "Network error deleting event.");
     } finally {
       setIsDeleting(false);

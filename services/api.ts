@@ -145,7 +145,7 @@ export async function getBanners(): Promise<Banner[]> {
       const nowIso = new Date().toISOString();
       const { data, error } = await supabase
         .from("banners")
-        .select("*")
+        .select("id, title, subtitle, image_url, mobile_image_url, link_url, target_event_id, cta_text, banner_type, display_order, is_active, start_date, end_date")
         .eq("is_active", true)
         .or(`start_date.is.null,start_date.lte.${nowIso}`)
         .or(`end_date.is.null,end_date.gte.${nowIso}`)
@@ -167,12 +167,12 @@ export async function getCategories(): Promise<Category[]> {
   try {
     const { data, error } = await supabase
       .from("categories")
-      .select("*")
+      .select("id, name, slug, description, image, status, display_order")
       .eq("status", "active")
       .order("display_order", { ascending: true });
 
     if (error || !data || data.length === 0) return MOCK_CATEGORIES;
-    return data as Category[];
+    return (data as unknown) as Category[];
   } catch {
     return MOCK_CATEGORIES;
   }
@@ -193,11 +193,11 @@ export async function getEvents(): Promise<Event[]> {
     try {
       const { data, error } = await supabase
         .from("events")
-        .select("*")
+        .select("id, title, slug, short_description, category_id, event_date, venue, city, state, pincode, banner_image, thumbnail_image, registration_fee, max_participants, current_participants, status, is_featured, is_published")
         .eq("is_published", true)
         .order("event_date", { ascending: true });
 
-      if (!error && data) return data as Event[];
+      if (!error && data) return (data as unknown) as Event[];
     } catch {
       // Return empty array
     }
@@ -211,11 +211,11 @@ export async function getWebsiteSettings(): Promise<WebsiteSettings> {
   try {
     const { data, error } = await supabase
       .from("website_settings")
-      .select("*")
+      .select("id, setting_key, setting_value, setting_type, description")
       .single();
 
     if (error || !data) return MOCK_SETTINGS;
-    return data as WebsiteSettings;
+    return (data as unknown) as WebsiteSettings;
   } catch {
     return MOCK_SETTINGS;
   }

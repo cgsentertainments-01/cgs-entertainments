@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const placement = searchParams.get("placement");
     const supabase = getSupabaseAdmin();
 
-    let query = supabase.from("banners").select("*");
+    let query = supabase.from("banners").select("id, title, subtitle, image_url, mobile_image_url, link_url, target_event_id, cta_text, banner_type, display_order, is_active, start_date, end_date, created_at, updated_at");
 
     if (placement && placement !== "all") {
       query = query.eq("banner_type", placement);

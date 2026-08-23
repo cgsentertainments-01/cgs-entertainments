@@ -201,7 +201,7 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
               }}
             >
               {avatarUrl && avatarUrl !== "/images/logos/logo.jpeg" ? (
-                <img src={avatarUrl} alt={adminName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={avatarUrl} alt={adminName} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 adminName.slice(0, 2).toUpperCase()
               )}

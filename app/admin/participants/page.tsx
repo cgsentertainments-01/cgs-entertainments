@@ -31,6 +31,7 @@ import {
   Send,
   Bell,
 } from "lucide-react";
+import { Pagination } from "@/components/common/Pagination";
 
 interface ParticipantItem {
   id: string;
@@ -361,6 +362,14 @@ export default function AdminParticipantsPage() {
     return matchesSearch && matchesResult;
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+  const totalPages = Math.ceil(filteredParticipants.length / pageSize) || 1;
+  const paginatedParticipants = filteredParticipants.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   const handleDownloadCSV = () => {
     const headers =
       "Registration ID,Participant Number,Full Name,Email,Phone,WhatsApp,DOB,Age,Gender,Parent Name,Address,City,State,Pincode,Event,Category,Comp Type,Age Category,Dance Style,Team Name,Song Title,Duration,Academy,Awards,Video Path,Result Status,Date Registered\n";
@@ -660,7 +669,7 @@ export default function AdminParticipantsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredParticipants.map((p) => {
+              {paginatedParticipants.map((p) => {
                 const dateStr = p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-";
                 const hasVideo = Boolean(p.video_signed_url || p.video_path || p.video_url);
                 const d = p.details || {};
@@ -814,6 +823,8 @@ export default function AdminParticipantsPage() {
             </tbody>
           </table>
         )}
+
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
       {/* ── RESULT SELECTION MODAL ── */}

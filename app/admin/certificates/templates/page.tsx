@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Award,
   Plus,
@@ -20,33 +19,35 @@ import {
   FileText,
   Sliders,
   Image as ImageIcon,
+  Check,
+  Ban,
+  ArrowLeft,
 } from "lucide-react";
 
 interface CertificateTemplate {
   id: string;
   name: string;
+  certificate_type?: string;
   background_url: string;
   orientation?: "landscape" | "portrait";
-  width?: number;
-  height?: number;
-  configuration?: any;
   is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
 export default function AdminCertificatesTemplatesPage() {
-  const router = useRouter();
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // New Template Modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // Ready-Made Template Upload Modal state
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
+  const [newCertType, setNewCertType] = useState("winner");
   const [newBgUrl, setNewBgUrl] = useState<string | null>(null);
   const [uploadingBg, setUploadingBg] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Preview Modal state
   const [previewTemplate, setPreviewTemplate] = useState<CertificateTemplate | null>(null);
@@ -82,10 +83,16 @@ export default function AdminCertificatesTemplatesPage() {
     fetchTemplates();
   }, []);
 
-  // Upload background file in modal
-  const handleModalBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload Ready-Made Background Image (.webp, .png, .jpg, .jpeg)
+  const handleTemplateImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const allowedTypes = ["image/webp", "image/png", "image/jpeg", "image/jpg"];
+    if (!allowedTypes.includes(file.type)) {
+      setModalError("Invalid image format! Please upload a .webp, .png, or .jpg file.");
+      return;
+    }
 
     try {
       setUploadingBg(true);
@@ -104,109 +111,41 @@ export default function AdminCertificatesTemplatesPage() {
         const data = await res.json();
         if (data.success && data.url) {
           setNewBgUrl(data.url);
+          showToast("✓ Template image uploaded successfully!");
           return;
         }
-        setModalError(data.error || "Failed to upload background image.");
+        setModalError(data.error || "Failed to upload template image.");
       } else {
         const errJson = await res.json();
         setModalError(errJson.error || "Upload failed.");
       }
     } catch (err) {
-      console.error("Error uploading background:", err);
-      setModalError("Network error uploading background image.");
+      console.error("Error uploading template image:", err);
+      setModalError("Network error uploading template image.");
     } finally {
       setUploadingBg(false);
     }
   };
 
-  // Create Template and launch editor
-  const handleProceedToEditor = async () => {
+  // Save Ready-Made Template
+  const handleSaveTemplate = async () => {
     if (!newTemplateName.trim()) {
       setModalError("Please enter a Template Name.");
       return;
     }
     if (!newBgUrl) {
-      setModalError("Please upload a Certificate Background image.");
+      setModalError("Please upload a Certificate Ready-Made Image file (.webp, .png, .jpg).");
       return;
     }
 
     try {
+      setIsSaving(true);
       const payload = {
         name: newTemplateName.trim(),
+        certificate_type: newCertType,
         background_url: newBgUrl,
         orientation: "landscape",
-        width: 1100,
-        height: 780,
-        configuration: {
-          elements: [
-            {
-              id: "elem-title",
-              type: "static_text",
-              text: "CERTIFICATE OF ACHIEVEMENT",
-              x: 200,
-              y: 120,
-              width: 700,
-              height: 50,
-              fontSize: 32,
-              fontFamily: "Cinzel, serif",
-              fontWeight: 800,
-              textAlign: "center",
-              color: "#D97706",
-              rotation: 0,
-              opacity: 100,
-              zIndex: 1,
-            },
-            {
-              id: "elem-name",
-              type: "dynamic_text",
-              fieldKey: "participant_name",
-              text: "{{participant_name}}",
-              x: 200,
-              y: 260,
-              width: 700,
-              height: 60,
-              fontSize: 42,
-              fontFamily: "'Playfair Display', serif",
-              fontWeight: 900,
-              textAlign: "center",
-              color: "#0F172A",
-              rotation: 0,
-              opacity: 100,
-              zIndex: 2,
-            },
-            {
-              id: "elem-event",
-              type: "dynamic_text",
-              fieldKey: "event_name",
-              text: "{{event_name}}",
-              x: 200,
-              y: 360,
-              width: 700,
-              height: 40,
-              fontSize: 24,
-              fontFamily: "Montserrat, sans-serif",
-              fontWeight: 700,
-              textAlign: "center",
-              color: "#6D28D9",
-              rotation: 0,
-              opacity: 100,
-              zIndex: 3,
-            },
-            {
-              id: "elem-qr",
-              type: "qr_code",
-              fieldKey: "qr_code",
-              x: 80,
-              y: 580,
-              width: 110,
-              height: 110,
-              rotation: 0,
-              opacity: 100,
-              zIndex: 4,
-            },
-          ],
-        },
-        is_active: false,
+        is_active: true,
       };
 
       const res = await fetch("/api/certificates/templates", {
@@ -217,37 +156,42 @@ export default function AdminCertificatesTemplatesPage() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.template) {
-          setShowCreateModal(false);
-          router.push(`/admin/certificates/templates/editor?id=${data.template.id}`);
+        if (data.success) {
+          showToast(`✓ Ready-made template "${newTemplateName}" saved!`);
+          setShowUploadModal(false);
+          setNewTemplateName("");
+          setNewBgUrl(null);
+          fetchTemplates();
           return;
         }
       }
-      setModalError("Failed launching template editor.");
+      setModalError("Failed saving template.");
     } catch (err) {
-      console.error("Error launching editor:", err);
-      setModalError("Failed launching template editor.");
+      console.error("Error saving template:", err);
+      setModalError("Network error saving template.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Set Active Template
-  const handleSetActive = async (t: CertificateTemplate) => {
+  // Toggle Active/Inactive Status
+  const handleToggleActive = async (t: CertificateTemplate) => {
     try {
       const res = await fetch(`/api/certificates/templates/${t.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: true }),
+        body: JSON.stringify({ is_active: !t.is_active }),
       });
       if (res.ok) {
-        showToast(`✓ Template "${t.name}" set as Active default!`);
+        showToast(`✓ Template "${t.name}" status updated to ${!t.is_active ? "ACTIVE" : "INACTIVE"}`);
         fetchTemplates();
       }
     } catch (e) {
-      console.error("Error setting active template:", e);
+      console.error("Error toggling template status:", e);
     }
   };
 
-  // Delete Template
+  // Delete Template safely
   const handleDeleteTemplate = async (id: string, name: string) => {
     if (!confirm(`Are you sure you want to delete template "${name}"?`)) return;
     try {
@@ -258,32 +202,6 @@ export default function AdminCertificatesTemplatesPage() {
       }
     } catch (e) {
       console.error("Error deleting template:", e);
-    }
-  };
-
-  // Duplicate Template
-  const handleDuplicateTemplate = async (t: CertificateTemplate) => {
-    try {
-      const payload = {
-        name: `${t.name} (Copy)`,
-        background_url: t.background_url,
-        orientation: t.orientation || "landscape",
-        width: t.width || 1100,
-        height: t.height || 780,
-        configuration: t.configuration || { elements: [] },
-        is_active: false,
-      };
-      const res = await fetch("/api/certificates/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        showToast(`✓ Template duplicated: ${t.name} (Copy)`);
-        fetchTemplates();
-      }
-    } catch (e) {
-      console.error("Error duplicating template:", e);
     }
   };
 
@@ -314,13 +232,16 @@ export default function AdminCertificatesTemplatesPage() {
       )}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32, flexWrap: "wrap", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 900, color: "#111827", display: "flex", alignItems: "center", gap: 10, margin: "0 0 4px" }}>
-            <Award size={28} color="#6D28D9" /> Certificate Templates Registry
+          <Link href="/admin/certificates" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6D28D9", textDecoration: "none", fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+            <ArrowLeft size={16} /> Back to Certificates
+          </Link>
+          <h1 style={{ fontSize: 28, fontWeight: 900, color: "#0F172A", margin: "0 0 4px", letterSpacing: -0.4, display: "flex", alignItems: "center", gap: 10 }}>
+            <ImageIcon size={28} color="#6D28D9" /> Ready-Made Certificate Templates
           </h1>
-          <p style={{ fontSize: 14.5, color: "#6B7280", margin: 0 }}>
-            Upload certificate background designs and visually configure dynamic element placements.
+          <p style={{ fontSize: 14.5, color: "#64748B", margin: 0, fontWeight: 500 }}>
+            Upload complete ready-made background images (.webp, .png, .jpg). The uploaded image is your certificate design.
           </p>
         </div>
 
@@ -336,7 +257,7 @@ export default function AdminCertificatesTemplatesPage() {
               background: "#F3F4F6",
               color: "#374151",
               border: "1px solid #D1D5DB",
-              borderRadius: 10,
+              borderRadius: 12,
               fontSize: 14,
               fontWeight: 700,
               cursor: "pointer",
@@ -348,414 +269,240 @@ export default function AdminCertificatesTemplatesPage() {
           <button
             type="button"
             onClick={() => {
+              setShowUploadModal(true);
               setNewTemplateName("");
               setNewBgUrl(null);
               setModalError(null);
-              setShowCreateModal(true);
             }}
             style={{
+              padding: "10px 20px",
+              borderRadius: 12,
+              background: "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)",
+              color: "#ffffff",
+              fontSize: 14,
+              fontWeight: 800,
+              border: "none",
+              cursor: "pointer",
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              padding: "10px 22px",
-              background: "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 10,
-              fontSize: 14,
-              fontWeight: 900,
-              cursor: "pointer",
-              boxShadow: "0 4px 14px rgba(109, 40, 217, 0.25)",
+              boxShadow: "0 4px 14px rgba(109,40,217,0.3)",
             }}
           >
-            <Plus size={18} /> Create Template
+            <Plus size={18} /> Upload Ready-Made Template
           </button>
         </div>
       </div>
 
       {error && (
         <div style={{ padding: 16, background: "#FEF2F2", color: "#991B1B", borderRadius: 12, marginBottom: 24, fontWeight: 600 }}>
-          {error}
+          ⚠️ {error}
         </div>
       )}
 
-      {/* Templates Grid */}
+      {/* Templates Gallery Grid */}
       {loading ? (
-        <div style={{ padding: 60, textAlign: "center", color: "#64748B", fontWeight: 700 }}>
-          Loading certificate templates registry...
+        <div style={{ padding: 60, textAlign: "center", color: "#6B7280", fontWeight: 700 }}>
+          Loading ready-made templates...
         </div>
       ) : templates.length === 0 ? (
-        <div style={{ background: "#ffffff", border: "1.5px solid #E2E8F0", borderRadius: 20, padding: 60, textAlign: "center", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-          <Award size={48} color="#CBD5E1" style={{ margin: "0 auto 12px" }} />
-          <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>No Certificate Templates Created</h3>
-          <p style={{ fontSize: 14, color: "#64748B", maxWidth: 480, margin: "0 auto 20px" }}>
-            Upload your official event certificate design image and visually place participant names, dates, results, and QR codes.
+        <div style={{ background: "#ffffff", borderRadius: 20, border: "1.5px solid #E2E8F0", padding: "60px 24px", textAlign: "center", color: "#64748B" }}>
+          <ImageIcon size={48} color="#94A3B8" style={{ margin: "0 auto 14px", opacity: 0.5 }} />
+          <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>No Certificate Templates Uploaded Yet</h3>
+          <p style={{ fontSize: 14, color: "#64748B", maxWidth: 440, margin: "0 auto 20px" }}>
+            Upload ready-made background design images (.webp, .png, .jpg). Admin can then select a template and edit text over it.
           </p>
           <button
             type="button"
-            onClick={() => {
-              setNewTemplateName("");
-              setNewBgUrl(null);
-              setModalError(null);
-              setShowCreateModal(true);
-            }}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 24px",
-              background: "#6D28D9",
-              color: "#fff",
-              borderRadius: 12,
-              fontWeight: 900,
-              fontSize: 14,
-              cursor: "pointer",
-              border: "none",
-              boxShadow: "0 4px 14px rgba(109,40,217,0.3)",
-            }}
+            onClick={() => setShowUploadModal(true)}
+            style={{ padding: "10px 20px", borderRadius: 12, background: "#6D28D9", color: "#fff", border: "none", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
           >
-            <Plus size={18} /> Create Your First Template
+            + Upload First Template
           </button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 24 }}>
-          {templates.map((t) => {
-            const isLandscape = (t.orientation || "landscape") === "landscape";
-            const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Recent";
-            const elemCount = t.configuration?.elements?.length || 0;
-
-            return (
-              <div
-                key={t.id}
-                style={{
-                  background: "#ffffff",
-                  border: t.is_active ? "2px solid #6D28D9" : "1.5px solid #E2E8F0",
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  boxShadow: t.is_active ? "0 10px 28px rgba(109,40,217,0.15)" : "0 2px 10px rgba(0,0,0,0.03)",
-                  display: "flex",
-                  flexDirection: "column",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                }}
-              >
-                {/* Thumbnail Header */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 24 }}>
+          {templates.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                background: "#ffffff",
+                borderRadius: 20,
+                border: t.is_active ? "2px solid #6D28D9" : "1.5px solid #E2E8F0",
+                padding: 20,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                position: "relative",
+              }}
+            >
+              <div>
+                {/* Thumbnail Preview Card */}
                 <div
                   style={{
-                    height: 200,
-                    background: t.background_url ? `url(${t.background_url}) center/cover no-repeat #F8FAFC` : "#F8FAFC",
+                    height: 180,
+                    borderRadius: 14,
+                    background: t.background_url ? `url(${t.background_url}) center/cover no-repeat` : "#F8FAFC",
+                    marginBottom: 16,
+                    border: "1px solid #E2E8F0",
                     position: "relative",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderBottom: "1px solid #E2E8F0",
+                    overflow: "hidden",
                   }}
                 >
-                  {!t.background_url && (
-                    <div style={{ color: "#94A3B8", textAlign: "center" }}>
-                      <ImageIcon size={32} style={{ margin: "0 auto 4px", opacity: 0.5 }} />
-                      <div style={{ fontSize: 12, fontWeight: 700 }}>No Background Image</div>
-                    </div>
-                  )}
-
-                  {/* Status Badges */}
-                  <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 8 }}>
-                    {t.is_active ? (
-                      <span style={{ background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 900, padding: "4px 10px", borderRadius: 8, boxShadow: "0 2px 6px rgba(16,185,129,0.4)" }}>
-                        ✓ Active Default
-                      </span>
-                    ) : (
-                      <span style={{ background: "rgba(15,23,42,0.75)", backdropFilter: "blur(4px)", color: "#94A3B8", fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 8 }}>
-                        Draft Template
-                      </span>
-                    )}
+                  <div style={{ position: "absolute", top: 10, left: 10, background: "rgba(15, 23, 42, 0.75)", color: "#fff", padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                    {t.certificate_type || "Winner"}
                   </div>
-
-                  <div style={{ position: "absolute", top: 12, right: 12 }}>
-                    <span style={{ background: "rgba(255,255,255,0.9)", color: "#334155", fontSize: 11, fontWeight: 800, padding: "4px 8px", borderRadius: 6 }}>
-                      {isLandscape ? "Landscape" : "Portrait"}
-                    </span>
+                  <div style={{ position: "absolute", top: 10, right: 10, background: t.is_active ? "#10B981" : "#64748B", color: "#fff", padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 800 }}>
+                    {t.is_active ? "ACTIVE" : "INACTIVE"}
                   </div>
                 </div>
 
-                {/* Card Info Body */}
-                <div style={{ padding: "20px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                  <div>
-                    <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
-                      {t.name}
-                    </h3>
-                    <div style={{ fontSize: 13, color: "#64748B", display: "flex", gap: 12, alignItems: "center" }}>
-                      <span>{elemCount} configured elements</span>
-                      <span>•</span>
-                      <span>Created {dateStr}</span>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <Link
-                        href={`/admin/certificates/templates/editor?id=${t.id}`}
-                        style={{
-                          flex: 1,
-                          padding: "9px 14px",
-                          background: "#6D28D9",
-                          color: "#fff",
-                          borderRadius: 10,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          textDecoration: "none",
-                          textAlign: "center",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 6,
-                          boxShadow: "0 2px 8px rgba(109,40,217,0.25)",
-                        }}
-                      >
-                        <Edit3 size={14} /> Open Editor
-                      </Link>
-
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTemplate(t)}
-                        style={{
-                          padding: "9px 12px",
-                          background: "#F3F4F6",
-                          color: "#1E293B",
-                          border: "1px solid #CBD5E1",
-                          borderRadius: 10,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                        title="Preview template"
-                      >
-                        <Eye size={15} />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicateTemplate(t)}
-                        style={{
-                          padding: "9px 12px",
-                          background: "#F3F4F6",
-                          color: "#1E293B",
-                          border: "1px solid #CBD5E1",
-                          borderRadius: 10,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                        title="Duplicate template"
-                      >
-                        <Copy size={15} />
-                      </button>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
-                      {!t.is_active && (
-                        <button
-                          type="button"
-                          onClick={() => handleSetActive(t)}
-                          style={{ background: "none", border: "none", color: "#10B981", fontSize: 12.5, fontWeight: 800, cursor: "pointer", padding: 0 }}
-                        >
-                          Set as Active Default
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTemplate(t.id, t.name)}
-                        style={{ background: "none", border: "none", color: "#EF4444", fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: 0, marginLeft: "auto" }}
-                      >
-                        Delete Template
-                      </button>
-                    </div>
-                  </div>
+                <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 4px" }}>{t.name}</h3>
+                <div style={{ fontSize: 12.5, color: "#64748B", marginBottom: 14 }}>
+                  Uploaded: {t.created_at ? new Date(t.created_at).toLocaleDateString("en-IN") : "Recent"}
                 </div>
               </div>
-            );
-          })}
+
+              {/* Actions Footer */}
+              <div style={{ display: "flex", gap: 8, paddingTop: 12, borderTop: "1px solid #F1F5F9" }}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTemplate(t)}
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: 10, background: "#F1F5F9", border: "1px solid #CBD5E1", fontSize: 12.5, fontWeight: 800, color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                >
+                  <Eye size={14} color="#6D28D9" /> Preview
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleActive(t)}
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: 10, background: t.is_active ? "#FEF3C7" : "#ECFDF5", border: t.is_active ? "1px solid #FCD34D" : "1px solid #A7F3D0", fontSize: 12.5, fontWeight: 800, color: t.is_active ? "#B45309" : "#047857", cursor: "pointer" }}
+                >
+                  {t.is_active ? "Deactivate" : "Activate"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeleteTemplate(t.id, t.name)}
+                  style={{ padding: "8px 10px", borderRadius: 10, background: "#FEF2F2", border: "1px solid #FECACA", color: "#EF4444", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                  title="Delete Template"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* ── CREATE TEMPLATE MODAL ── */}
-      {showCreateModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }}>
-          <div style={{ background: "#ffffff", borderRadius: 24, width: "100%", maxWidth: 520, padding: 28, boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+      {/* ── UPLOAD READY-MADE TEMPLATE MODAL ── */}
+      {showUploadModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }}>
+          <div style={{ background: "#ffffff", borderRadius: 20, width: "100%", maxWidth: 520, padding: 28, boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#F3E8FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Award size={24} color="#6D28D9" />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: 19, fontWeight: 900, color: "#0F172A", margin: 0 }}>Create Certificate Template</h3>
-                  <div style={{ fontSize: 13, color: "#64748B" }}>Upload background design and name template</div>
-                </div>
-              </div>
-              <button type="button" onClick={() => setShowCreateModal(false)} style={{ border: "none", background: "none", cursor: "pointer" }}><X size={20} color="#94A3B8" /></button>
+              <h3 style={{ fontSize: 19, fontWeight: 900, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                <Upload size={20} color="#6D28D9" /> Upload Ready-Made Template Image
+              </h3>
+              <button type="button" onClick={() => setShowUploadModal(false)} style={{ border: "none", background: "none", cursor: "pointer" }}><X size={20} color="#94A3B8" /></button>
             </div>
 
             {modalError && (
-              <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 12, padding: "10px 14px", color: "#991B1B", fontSize: 13, fontWeight: 700, marginBottom: 16 }}>
-                {modalError}
+              <div style={{ padding: 12, background: "#FEF2F2", color: "#991B1B", borderRadius: 10, marginBottom: 16, fontSize: 13, fontWeight: 700 }}>
+                ⚠️ {modalError}
               </div>
             )}
 
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#1E293B", marginBottom: 6 }}>
                 Template Name:
               </label>
               <input
                 type="text"
+                placeholder="e.g. Gold Winner Certificate"
                 value={newTemplateName}
                 onChange={(e) => setNewTemplateName(e.target.value)}
-                placeholder="e.g. National Championship Certificate 2026"
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, outline: "none" }}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontWeight: 700 }}
               />
             </div>
 
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#1E293B", marginBottom: 6 }}>
-                Upload Certificate Design Background (PNG / JPG / WEBP):
+                Certificate Type:
               </label>
-              <label
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "24px 16px",
-                  borderRadius: 16,
-                  border: "2px dashed #CBD5E1",
-                  background: "#F8FAFC",
-                  cursor: "pointer",
-                  textAlign: "center",
-                }}
+              <select
+                value={newCertType}
+                onChange={(e) => setNewCertType(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontWeight: 700, background: "#fff" }}
               >
-                <Upload size={28} color="#6D28D9" style={{ marginBottom: 8 }} />
-                <span style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
-                  {uploadingBg ? "Uploading Background..." : newBgUrl ? "✓ Background Uploaded (Click to Replace)" : "Choose Certificate Image File"}
-                </span>
-                <span style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>High-resolution Landscape design image</span>
-                <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={handleModalBgUpload} style={{ display: "none" }} />
+                <option value="winner">🏆 Winner</option>
+                <option value="runner_up">🥈 Runner-up</option>
+                <option value="finalist">🥉 Finalist</option>
+                <option value="special_mention">⭐ Special Mention</option>
+                <option value="participation">🎓 Participation</option>
+                <option value="achievement">🌟 Achievement</option>
+                <option value="custom">🎨 Custom</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#1E293B", marginBottom: 6 }}>
+                Upload Background Image (.webp, .png, .jpg):
               </label>
 
-              {newBgUrl && (
-                <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", border: "1px solid #E2E8F0", height: 120, background: `url(${newBgUrl}) center/contain no-repeat #F8FAFC` }} />
+              {newBgUrl ? (
+                <div style={{ position: "relative", height: 160, borderRadius: 12, overflow: "hidden", border: "2px solid #6D28D9" }}>
+                  <img src={newBgUrl} alt="Background preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <button
+                    type="button"
+                    onClick={() => setNewBgUrl(null)}
+                    style={{ position: "absolute", top: 8, right: 8, background: "rgba(239, 68, 68, 0.9)", color: "#fff", border: "none", borderRadius: "50%", width: 28, height: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, border: "2px dashed #CBD5E1", borderRadius: 12, background: "#F8FAFC", cursor: "pointer" }}>
+                  <Upload size={28} color="#6D28D9" style={{ marginBottom: 8 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>
+                    {uploadingBg ? "Uploading..." : "Click to Upload Certificate Image"}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: "#64748B", marginTop: 4 }}>Supports .WEBP, .PNG, .JPG, .JPEG</span>
+                  <input type="file" accept="image/webp,image/png,image/jpeg,image/jpg" onChange={handleTemplateImageUpload} style={{ display: "none" }} disabled={uploadingBg} />
+                </label>
               )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", fontWeight: 700, color: "#334155", cursor: "pointer" }}
-              >
+              <button type="button" onClick={() => setShowUploadModal(false)} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", fontWeight: 700, color: "#334155", cursor: "pointer" }}>
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleProceedToEditor}
-                style={{
-                  padding: "10px 22px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "linear-gradient(135deg, #6D28D9, #7C3AED)",
-                  fontWeight: 900,
-                  color: "#fff",
-                  cursor: "pointer",
-                  boxShadow: "0 4px 14px rgba(109, 40, 217, 0.3)",
-                }}
+                onClick={handleSaveTemplate}
+                disabled={isSaving || !newBgUrl}
+                style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)", fontWeight: 900, color: "#fff", cursor: isSaving || !newBgUrl ? "not-allowed" : "pointer" }}
               >
-                Launch Visual Editor →
+                {isSaving ? "Saving..." : "Save Template"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── PREVIEW MODAL ── */}
+      {/* ── PREVIEW TEMPLATE MODAL ── */}
       {previewTemplate && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }}>
-          <div style={{ background: "#ffffff", borderRadius: 24, width: "100%", maxWidth: 900, overflow: "hidden", boxShadow: "0 25px 60px rgba(0,0,0,0.5)", border: "1px solid #E2E8F0" }}>
-            <div style={{ padding: "16px 24px", background: "#0F172A", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>Template Preview: {previewTemplate.name}</div>
-              <button onClick={() => setPreviewTemplate(null)} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer" }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ padding: 24, background: "#020617", display: "flex", justifyContent: "center" }}>
-              <div
-                style={{
-                  position: "relative",
-                  width: 800,
-                  height: 560,
-                  background: previewTemplate.background_url ? `url(${previewTemplate.background_url}) center/cover no-repeat #ffffff` : "#ffffff",
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-                }}
-              >
-                {(previewTemplate.configuration?.elements || []).map((elem: any) => {
-                  let textVal = elem.text || "";
-                  if (elem.type === "dynamic_text" && elem.fieldKey) {
-                    const sampleMap: Record<string, string> = {
-                      participant_name: "Kalyani Mukkollu",
-                      event_name: "CGS Dance Fest 2026",
-                      event_date: "15 August 2026",
-                      result: "Winner 🏆",
-                      certificate_id: "CGS-DF26-0001",
-                      issue_date: "20 August 2026",
-                      organizer_name: "CGS Entertainments",
-                    };
-                    textVal = sampleMap[elem.fieldKey] || elem.fieldKey;
-                  }
-
-                  const scaleFactor = 800 / (previewTemplate.width || 1100);
-
-                  return (
-                    <div
-                      key={elem.id}
-                      style={{
-                        position: "absolute",
-                        left: elem.x * scaleFactor,
-                        top: elem.y * scaleFactor,
-                        width: elem.width * scaleFactor,
-                        height: elem.height * scaleFactor,
-                        zIndex: elem.zIndex,
-                        transform: `rotate(${elem.rotation || 0}deg)`,
-                        opacity: (elem.opacity ?? 100) / 100,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: elem.textAlign === "center" ? "center" : elem.textAlign === "right" ? "flex-end" : "flex-start",
-                      }}
-                    >
-                      {(elem.type === "static_text" || elem.type === "dynamic_text") && (
-                        <span
-                          style={{
-                            fontFamily: elem.fontFamily || "sans-serif",
-                            fontSize: `${(elem.fontSize || 20) * scaleFactor}px`,
-                            fontWeight: elem.fontWeight || 600,
-                            fontStyle: elem.fontStyle || "normal",
-                            color: elem.color || "#0F172A",
-                            textAlign: elem.textAlign || "left",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {textVal}
-                        </span>
-                      )}
-                      {elem.type === "logo" && elem.src && <img src={elem.src} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />}
-                    </div>
-                  );
-                })}
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }}>
+          <div style={{ background: "#ffffff", borderRadius: 24, width: "100%", maxWidth: 960, padding: 24, boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>{previewTemplate.name}</h3>
+                <div style={{ fontSize: 12.5, color: "#64748B" }}>Type: <strong>{previewTemplate.certificate_type || "Winner"}</strong></div>
               </div>
+              <button type="button" onClick={() => setPreviewTemplate(null)} style={{ border: "none", background: "none", cursor: "pointer" }}><X size={22} color="#94A3B8" /></button>
             </div>
-            <div style={{ padding: "14px 24px", background: "#F8FAFC", borderTop: "1px solid #E2E8F0", display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setPreviewTemplate(null)} style={{ padding: "8px 20px", background: "#0F172A", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, cursor: "pointer" }}>
-                Close Preview
-              </button>
-            </div>
+
+            <div style={{ width: "100%", height: 500, borderRadius: 16, overflow: "hidden", border: "1px solid #E2E8F0", background: `url(${previewTemplate.background_url}) center/contain no-repeat #F8FAFC` }} />
           </div>
         </div>
       )}

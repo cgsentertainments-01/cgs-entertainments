@@ -43,10 +43,16 @@ export function NotificationBell() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      const interval = setInterval(fetchNotifications, 15000); // Polling every 15s
+      const interval = setInterval(fetchNotifications, 60000); // Passive poll every 60s
       return () => clearInterval(interval);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (open && user) {
+      fetchNotifications();
+    }
+  }, [open, user]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

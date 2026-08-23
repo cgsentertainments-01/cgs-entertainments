@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const roleFilter = searchParams.get("role");
 
     const supabase = getSupabaseAdmin();
-    let query = supabase.from("guests_judges").select("*");
+    let query = supabase.from("guests_judges").select("id, name, role, designation, organization, bio, photo_url, social_links, display_order, is_active, created_at, updated_at");
 
     if (roleFilter && roleFilter !== "all") {
       query = query.eq("role", roleFilter);

@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     // 1. Fetch matching participants for this email
     const { data: participants } = await supabaseAdmin
       .from("participants")
-      .select("*")
+      .select("id, participant_number, full_name, email, phone")
       .ilike("email", userEmail);
 
     if (!participants || participants.length === 0) {
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     // 2. Fetch registrations for these participants
     const { data: registrations } = await supabaseAdmin
       .from("registrations")
-      .select("*")
+      .select("id, registration_number, event_id, participant_id, registration_status, payment_status, registration_date, amount, notes, created_at")
       .in("participant_id", participantIds);
 
     if (!registrations || registrations.length === 0) {
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     // 3. Fetch Events
     const { data: eventsList } = await supabaseAdmin
       .from("events")
-      .select("*")
+      .select("id, title, slug, event_date, venue, city, state, thumbnail_image, banner_image, registration_fee, status")
       .in("id", eventIds);
 
     const eventsMap: Record<string, any> = {};
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     // 4. Fetch Event Results
     const { data: resultsList } = await supabaseAdmin
       .from("event_results")
-      .select("*")
+      .select("id, event_id, participant_id, result_type, rank, score, certificate_url, remarks, created_at")
       .in("participant_id", participantIds);
 
     const resultsMap: Record<string, any> = {};
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     const myEvents = registrations.map((reg) => {
       const evt = eventsMap[reg.event_id] || {};
       const res = resultsMap[`${reg.event_id}_${reg.participant_id}`] || null;
-      const part = participants.find((p) => p.id === reg.participant_id) || {};
+      const part: any = participants.find((p: any) => p.id === reg.participant_id) || {};
 
       let parsedNotes: any = {};
       if (reg.notes) {

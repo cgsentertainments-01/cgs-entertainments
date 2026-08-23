@@ -558,24 +558,48 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { data: registrations, error } = await supabase
+    const { searchParams } = new URL(request.url);
+    const pageParam = parseInt(searchParams.get("page") || "0", 10);
+    const limitParam = parseInt(searchParams.get("limit") || "0", 10);
+    const statusParam = searchParams.get("status");
+
+    let query = supabase
       .from("registrations")
       .select(`
-        *,
+        id, registration_number, event_id, participant_id, category_id, dance_style_id, registration_status, payment_status, registration_date, amount, notes, qr_token, created_at, updated_at,
         events ( id, title, slug, venue, city, state, event_date, registration_fee ),
         participants ( id, participant_number, full_name, email, phone, city, state ),
         event_categories ( id, name ),
         dance_styles ( id, name ),
         registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
-      `)
-      .order("created_at", { ascending: false });
+      `, pageParam > 0 && limitParam > 0 ? { count: "exact" } : undefined);
+
+    if (statusParam && statusParam !== "all") {
+      query = query.eq("registration_status", statusParam);
+    }
+
+    query = query.order("created_at", { ascending: false });
+
+    if (pageParam > 0 && limitParam > 0) {
+      const from = (pageParam - 1) * limitParam;
+      const to = from + limitParam - 1;
+      query = query.range(from, to);
+    }
+
+    const { data: registrations, count, error } = await query;
 
     if (error) {
       console.error("GET /api/registrations error:", error.message);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, registrations: registrations || [] });
+    return NextResponse.json({
+      success: true,
+      registrations: registrations || [],
+      total: count !== null ? count : (registrations ? registrations.length : 0),
+      page: pageParam || 1,
+      totalPages: limitParam > 0 && count ? Math.ceil(count / limitParam) : 1,
+    });
   } catch (err: any) {
     console.error("GET /api/registrations exception:", err);
     return NextResponse.json({ success: false, error: err.message || "Failed to fetch registrations." }, { status: 500 });

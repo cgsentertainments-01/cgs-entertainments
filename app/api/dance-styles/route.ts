@@ -7,7 +7,7 @@ export async function GET() {
     if (supabase) {
       const { data, error } = await supabase
         .from("dance_styles")
-        .select("*")
+        .select("id, name, slug, description, is_active")
         .eq("is_active", true)
         .order("name", { ascending: true });
 

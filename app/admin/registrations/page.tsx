@@ -12,6 +12,7 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
+import { Pagination } from "@/components/common/Pagination";
 
 interface AdminRegistration {
   id: string;
@@ -101,6 +102,9 @@ export default function AdminRegistrationsPage() {
     return "-";
   };
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+
   const filteredRegistrations = registrations.filter((reg) => {
     const searchLower = searchQuery.toLowerCase();
     const rzpId = getRazorpayPaymentId(reg).toLowerCase();
@@ -126,6 +130,12 @@ export default function AdminRegistrationsPage() {
 
     return matchesSearch && matchesStatus;
   });
+
+  const totalPages = Math.ceil(filteredRegistrations.length / pageSize) || 1;
+  const paginatedRegistrations = filteredRegistrations.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   const handleDownloadCSV = () => {
     const headers = "Registration No,Participant Name,Email,Phone,Event,Category,Date,Amount,Payment Status,Razorpay Payment ID,Registration Status\n";
@@ -292,7 +302,7 @@ export default function AdminRegistrationsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredRegistrations.map((reg) => {
+              {paginatedRegistrations.map((reg) => {
                 const dateStr = reg.created_at ? new Date(reg.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-";
                 const payStatus = (reg.payment_status || "unpaid").toLowerCase();
                 const rzpPayId = getRazorpayPaymentId(reg);
@@ -371,6 +381,8 @@ export default function AdminRegistrationsPage() {
             </tbody>
           </table>
         )}
+
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
       {/* Modal for Details */}

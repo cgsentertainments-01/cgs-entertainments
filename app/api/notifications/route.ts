@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
     const { data: allNotifs, error } = await supabaseAdmin
       .from("notifications")
-      .select("*")
+      .select("id, title, message, notification_type, reference_type, reference_id, user_id, participant_id, is_read, created_at")
       .order("created_at", { ascending: false })
       .limit(100);
 

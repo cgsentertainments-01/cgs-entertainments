@@ -80,17 +80,20 @@ export async function GET(request: Request) {
     }
 
     // Merge Supabase events with server-side store events
-    // CRITICAL: Key ONLY by unique event ID so items NEVER appear duplicated!
+    // CRITICAL: Supabase DB is single source of truth when available. Fallback to store only if DB returns empty.
     const combinedMap = new Map<string, any>();
 
-    for (const item of supabaseEvents) {
-      if (item && item.id) {
-        combinedMap.set(String(item.id), item);
+    if (supabaseEvents && supabaseEvents.length > 0) {
+      for (const item of supabaseEvents) {
+        if (item && item.id) {
+          combinedMap.set(String(item.id), item);
+        }
       }
-    }
-    for (const item of getStoreEvents()) {
-      if (item && item.id) {
-        combinedMap.set(String(item.id), item);
+    } else {
+      for (const item of getStoreEvents()) {
+        if (item && item.id) {
+          combinedMap.set(String(item.id), item);
+        }
       }
     }
 
@@ -131,7 +134,7 @@ export async function GET(request: Request) {
       allEventsList = allEventsList.filter((evt) => {
         if (evt.is_published === false) return false;
         const statusUpper = String(evt.status || "").toUpperCase();
-        if (statusUpper === "CANCELLED" || statusUpper === "COMPLETED" || statusUpper === "DRAFT") return false;
+        if (statusUpper === "CANCELLED" || statusUpper === "COMPLETED" || statusUpper === "DRAFT" || statusUpper === "REGISTRATION_CLOSED") return false;
         return true;
       });
 
@@ -157,6 +160,42 @@ export async function GET(request: Request) {
     console.error("GET /api/events error:", err);
     return NextResponse.json({ events: [] });
   }
+}
+
+function normalizeTimestamp(value: unknown): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (
+    !trimmed ||
+    trimmed === "undefined" ||
+    trimmed === "null" ||
+    trimmed === "Open" ||
+    trimmed === "Closed" ||
+    trimmed === "TBA"
+  ) {
+    return null;
+  }
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function normalizeStatus(value: unknown): string {
+  if (!value || typeof value !== "string") return "registration_open";
+  const val = value.trim().toLowerCase();
+  const allowed = [
+    "draft",
+    "published",
+    "registration_open",
+    "registration_closed",
+    "ongoing",
+    "completed",
+    "cancelled",
+  ];
+  if (allowed.includes(val)) return val;
+  if (val === "upcoming") return "registration_open";
+  if (val === "archived" || val === "inactive" || val === "closed") return "registration_closed";
+  return "registration_open";
 }
 
 export async function POST(request: Request) {
@@ -253,14 +292,10 @@ export async function POST(request: Request) {
       ? registration_fee
       : parseFloat(String(price || registration_fee || "0").replace(/[^0-9.]/g, "")) || 0;
 
-    let isoDate = new Date().toISOString();
-    const dateInput = event_date || date;
-    if (dateInput) {
-      const parsed = new Date(dateInput);
-      if (!isNaN(parsed.getTime())) {
-        isoDate = parsed.toISOString();
-      }
-    }
+    const isoDate = normalizeTimestamp(event_date || date) || new Date().toISOString();
+    const normRegStart = normalizeTimestamp(registration_start_date);
+    const normRegDeadline = normalizeTimestamp(registration_deadline);
+    const normStatus = normalizeStatus(status);
 
     const resolvedCategoryId = category_id || (await getOrCreateCategoryId(category || "Dance"));
     const bannerImg = banner_image || img || "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=85";
@@ -280,8 +315,8 @@ export async function POST(request: Request) {
       event_start_time: event_start_time || "10:00 AM",
       event_end_date: event_end_date || "",
       event_end_time: event_end_time || "08:00 PM",
-      registration_start_date: registration_start_date || undefined,
-      registration_deadline: registration_deadline || undefined,
+      registration_start_date: normRegStart || undefined,
+      registration_deadline: normRegDeadline || undefined,
       timezone: timezone || "Asia/Kolkata (IST)",
       venue: venue || "HICC Convention Centre",
       address: address || "",
@@ -317,7 +352,7 @@ export async function POST(request: Request) {
       seo: seo || {},
       homepage_settings: homepage_settings || { show_on_homepage: true, is_featured: Boolean(is_featured) },
       form_config: form_config || undefined,
-      status: status === "Upcoming" ? "registration_open" : status?.toLowerCase() || "registration_open",
+      status: normStatus,
       is_featured: Boolean(is_featured),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
     };
@@ -329,8 +364,8 @@ export async function POST(request: Request) {
       short_description: newEvent.short_description,
       description: newEvent.description,
       event_date: newEvent.event_date,
-      registration_start_date: newEvent.registration_start_date || null,
-      registration_deadline: newEvent.registration_deadline || null,
+      registration_start_date: normRegStart,
+      registration_deadline: normRegDeadline,
       venue: newEvent.venue,
       address: newEvent.address,
       city: newEvent.city,
@@ -434,25 +469,41 @@ export async function DELETE(request: Request) {
       );
     }
 
+    console.log("DELETE EVENT ID:", eventUUID);
+
     // 3. Permanent deletion in Supabase using UUID primary key
-    const { error: delErr } = await supabase
+    const { data: deletedRows, error: delErr } = await supabase
       .from("events")
       .delete()
-      .eq("id", eventUUID);
+      .eq("id", eventUUID)
+      .select("id, title");
 
     if (delErr) {
-      console.error(`Supabase DELETE error for event ${eventUUID}:`, delErr);
+      console.error("EVENT DELETE ERROR:", delErr);
       return NextResponse.json(
         { success: false, error: `Unable to delete event from database: ${delErr.message}` },
         { status: 500 }
       );
     }
 
+    if (!deletedRows || deletedRows.length === 0) {
+      console.error(`[DELETE FAILED] 0 rows deleted for event ID ${eventUUID}`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "No event was deleted. Check the event ID or database permissions.",
+        },
+        { status: 404 }
+      );
+    }
+
+    console.log(`[DELETE SUCCESS] Deleted row from Supabase:`, deletedRows[0]);
+
     deleteFromStore(eventUUID);
     deleteFromStore(id);
     revalidateEventCaches(eventUUID, id);
 
-    return NextResponse.json({ success: true, permanent: true });
+    return NextResponse.json({ success: true, deletedEvent: deletedRows[0], permanent: true });
   } catch (err: any) {
     console.error("DELETE /api/events exception:", err);
     return NextResponse.json({ error: err.message || "Failed to delete event" }, { status: 500 });

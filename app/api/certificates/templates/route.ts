@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { verifyAdminApi } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const BUCKET_NAME = "certificates";
 const REGISTRY_FILE_PATH = "templates/templates_registry.json";
 
-// Helper for resilient storage fallback in Supabase Storage
+// Helper for storage registry fallback
 async function getStoredTemplatesFromStorage(supabase: any) {
   try {
     const { data, error } = await supabase.storage.from(BUCKET_NAME).download(REGISTRY_FILE_PATH);
@@ -29,6 +32,10 @@ async function saveTemplatesToStorage(supabase: any, templatesList: any[]) {
   }
 }
 
+/**
+ * GET /api/certificates/templates
+ * Always returns fresh templates directly from Supabase (no cache).
+ */
 export async function GET(request: Request) {
   try {
     const supabase = getSupabaseAdmin();
@@ -38,10 +45,10 @@ export async function GET(request: Request) {
 
     let templates: any[] = [];
 
-    // Try primary database query
+    // Try primary database query directly from Supabase
     const { data: dbTemplates, error: dbErr } = await supabase
       .from("certificate_templates")
-      .select("*")
+      .select("id, name, type, background_url, font_family, primary_color, layout_config, created_at, updated_at")
       .order("created_at", { ascending: false });
 
     if (!dbErr && dbTemplates && dbTemplates.length > 0) {
@@ -61,6 +68,10 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * POST /api/certificates/templates
+ * Create / Save a new Ready-Made Image Certificate Template.
+ */
 export async function POST(request: Request) {
   try {
     const authCheck = await verifyAdminApi();
@@ -75,12 +86,11 @@ export async function POST(request: Request) {
     const {
       id,
       name,
+      certificate_type = "winner",
       background_url,
       orientation = "landscape",
-      width = 1200,
-      height = 850,
-      configuration = { elements: [] },
-      is_active = false,
+      is_active = true,
+      configuration = {},
     } = body;
 
     if (!name || !name.trim()) {
@@ -88,7 +98,7 @@ export async function POST(request: Request) {
     }
 
     if (!background_url) {
-      return NextResponse.json({ success: false, error: "Certificate Background Image is required" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Certificate Ready-Made Background Image is required" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -102,10 +112,11 @@ export async function POST(request: Request) {
     const templateRecord = {
       id: templateId,
       name: name.trim(),
+      certificate_type: certificate_type.toLowerCase(),
       background_url,
       orientation,
-      width,
-      height,
+      width: 1200,
+      height: 850,
       configuration,
       is_active: Boolean(is_active),
       created_at: body.created_at || nowIso,
@@ -128,10 +139,6 @@ export async function POST(request: Request) {
       const currentList = await getStoredTemplatesFromStorage(supabase);
       const existingIdx = currentList.findIndex((t: any) => t.id === templateId);
 
-      if (is_active) {
-        currentList.forEach((t: any) => (t.is_active = false));
-      }
-
       if (existingIdx >= 0) {
         currentList[existingIdx] = templateRecord;
       } else {
@@ -144,7 +151,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "Certificate Template saved successfully",
+      message: "Ready-Made Certificate Template saved successfully",
       template: savedTemplate,
     });
   } catch (err: any) {

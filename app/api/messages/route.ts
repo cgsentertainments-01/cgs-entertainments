@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     let messagesList: any[] = [];
     const { data: dbMsgs, error } = await supabaseAdmin
       .from("messages")
-      .select("*")
+      .select("id, subject, message, recipient_id, participant_id, sender_name, is_read, created_at")
       .order("created_at", { ascending: false });
 
     if (!error && dbMsgs) {
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
       // Fallback: search notifications of type 'message' or reference_type 'message'
       const { data: notifMsgs } = await supabaseAdmin
         .from("notifications")
-        .select("*")
+        .select("id, title, message, reference_type, reference_id, user_id, is_read, created_at")
         .eq("reference_type", "message")
         .order("created_at", { ascending: false });
 

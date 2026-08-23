@@ -193,6 +193,42 @@ export async function PUT(
       }
     }
 
+function normalizeTimestamp(value: unknown): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (
+    !trimmed ||
+    trimmed === "undefined" ||
+    trimmed === "null" ||
+    trimmed === "Open" ||
+    trimmed === "Closed" ||
+    trimmed === "TBA"
+  ) {
+    return null;
+  }
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function normalizeStatus(value: unknown): string {
+  if (!value || typeof value !== "string") return "registration_open";
+  const val = value.trim().toLowerCase();
+  const allowed = [
+    "draft",
+    "published",
+    "registration_open",
+    "registration_closed",
+    "ongoing",
+    "completed",
+    "cancelled",
+  ];
+  if (allowed.includes(val)) return val;
+  if (val === "upcoming") return "registration_open";
+  if (val === "archived" || val === "inactive" || val === "closed") return "registration_closed";
+  return "registration_open";
+}
+
     // 6. Normalise fields
     const feeNum =
       typeof registration_fee === "number"
@@ -203,39 +239,37 @@ export async function PUT(
             String(price || registration_fee || "0").replace(/[^0-9.]/g, "")
           ) || 0;
 
-    let isoDate = new Date().toISOString();
-    const dateInput = event_date || date;
-    if (dateInput) {
-      const parsed = new Date(dateInput);
-      if (!isNaN(parsed.getTime())) isoDate = parsed.toISOString();
-    }
-
     const categoryId =
       category_id || (await getOrCreateCategoryId(supabase, category || "Dance"));
 
-    // 7. Build the update payload
+    // 7. Build the update payload using explicit column mappings and sanitized types
     const updatePayload: Record<string, unknown> = {
-      title: title || body.title,
-      event_date: isoDate,
-      venue: venue || "HICC Convention Centre",
-      city: city || "Hyderabad",
-      state: state || "Telangana",
-      registration_fee: feeNum,
-      max_participants: max_participants || maxSeats || 500,
-      status:
-        status === "Upcoming"
-          ? "registration_open"
-          : status?.toLowerCase() || "registration_open",
+      status: normalizeStatus(status),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
       updated_at: new Date().toISOString(),
     };
 
+    if (title) updatePayload.title = title;
     if (newSlug) updatePayload.slug = newSlug;
-    if (short_description) updatePayload.short_description = short_description;
-    if (description) updatePayload.description = description;
+    if (short_description !== undefined) updatePayload.short_description = short_description;
+    if (description !== undefined) updatePayload.description = description;
     if (categoryId) updatePayload.category_id = categoryId;
     if (address !== undefined) updatePayload.address = address;
+    if (venue) updatePayload.venue = venue;
+    if (city) updatePayload.city = city;
+    if (state) updatePayload.state = state;
     if (pincode) updatePayload.pincode = pincode;
+    if (registration_fee !== undefined || price !== undefined) updatePayload.registration_fee = feeNum;
+    if (max_participants !== undefined || maxSeats !== undefined) updatePayload.max_participants = max_participants || maxSeats;
+
+    const normEventDate = normalizeTimestamp(event_date || date);
+    if (normEventDate) {
+      updatePayload.event_date = normEventDate;
+    }
+
+    updatePayload.registration_start_date = normalizeTimestamp(registration_start_date);
+    updatePayload.registration_deadline = normalizeTimestamp(registration_deadline);
+
     if (form_config !== undefined) updatePayload.form_config = form_config;
 
     const bannerImg = banner_image || img;
@@ -243,14 +277,12 @@ export async function PUT(
     if (thumbnail_image || bannerImg)
       updatePayload.thumbnail_image = thumbnail_image || bannerImg;
 
-    if (registration_start_date)
-      updatePayload.registration_start_date = registration_start_date;
-    if (registration_deadline)
-      updatePayload.registration_deadline = registration_deadline;
     if (is_featured !== undefined)
       updatePayload.is_featured = Boolean(is_featured);
     if (terms_conditions || rules_regulations)
       updatePayload.terms_conditions = terms_conditions || rules_regulations;
+
+    console.log(`[PUT /api/events/${eventUUID}] Update payload:`, updatePayload);
 
     // 8. Execute UPDATE — target exactly the resolved UUID, confirm row returned
     const { data: updatedRow, error: sbErr } = await supabase
@@ -375,25 +407,46 @@ export async function DELETE(
           );
         }
 
-        const { error: delErr } = await supabase
+        console.log("DELETE EVENT ID:", resolved.uuid);
+
+        const { data: deletedRows, error: delErr } = await supabase
           .from("events")
           .delete()
-          .eq("id", resolved.uuid);
+          .eq("id", resolved.uuid)
+          .select("id, title");
 
         if (delErr) {
-          console.error(`Supabase DELETE error for event ${resolved.uuid}:`, delErr);
+          console.error("EVENT DELETE ERROR:", delErr);
           return NextResponse.json(
-            { error: `Unable to delete event: ${delErr.message}` },
+            { success: false, error: `Unable to delete event: ${delErr.message}` },
             { status: 500 }
           );
         }
+
+        if (!deletedRows || deletedRows.length === 0) {
+          console.error(`[DELETE FAILED] 0 rows deleted for event ID ${resolved.uuid}`);
+          return NextResponse.json(
+            {
+              success: false,
+              error: "No event was deleted. Check the event ID or database permissions.",
+            },
+            { status: 404 }
+          );
+        }
+
+        console.log(`[DELETE SUCCESS] Deleted row from Supabase:`, deletedRows[0]);
+        deleteFromStore(resolved.uuid);
+        deleteFromStore(id);
+        revalidateEventCaches(resolved.uuid, id);
+
+        return NextResponse.json({ success: true, deletedEvent: deletedRows[0] });
       }
     }
 
-    deleteFromStore(id);
-    revalidateEventCaches(id);
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: false, error: "Event not found in database." },
+      { status: 404 }
+    );
   } catch (err: any) {
     console.error("DELETE /api/events/[id] exception:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

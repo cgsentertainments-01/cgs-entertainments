@@ -34,14 +34,11 @@ import {
   Check,
   Sparkles,
 } from "lucide-react";
-import { EventItem, getEventByIdOrSlug, getAllEvents } from "@/services/event.service";
+import { EventItem, getEventByIdOrSlug } from "@/services/event.service";
 import {
   EventFormConfig,
   getDefaultFormConfig,
   ParticipationTypeConfig,
-  BasicParticipantFieldConfig,
-  CustomFieldConfig,
-  DocumentConfig,
 } from "@/types/event-config";
 
 /* ─── HOVER BUTTON COMPONENTS ─── */
@@ -207,12 +204,11 @@ export default function DynamicRegistrationPage() {
   const { user, loading: authLoading } = useAuth();
   const eventIdParam = (params?.eventId as string) || "";
 
-  // Event loading & available events list
+  // Event loading & target event state
   const [evt, setEvt] = useState<EventItem | null>(null);
-  const [availableEvents, setAvailableEvents] = useState<EventItem[]>([]);
   const [eventLoading, setEventLoading] = useState(true);
 
-  // Stepper state: Step 1 to Step 6
+  // Stepper state: Step 1 to Step 5 (Removed Event Selection Step)
   const [activeStep, setActiveStep] = useState(1);
   const [maxReachedStep, setMaxReachedStep] = useState(1);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -337,20 +333,20 @@ export default function DynamicRegistrationPage() {
     new Date().toISOString().split("T")[0]
   );
 
-  // Fetch Event Details & Published Events List
+  // Fetch Target Event Details
   useEffect(() => {
-    async function initEvents() {
+    async function initEvent() {
+      if (!eventIdParam) {
+        setEventLoading(false);
+        return;
+      }
       try {
         setEventLoading(true);
-        const [targetData, allList] = await Promise.all([
-          eventIdParam ? getEventByIdOrSlug(eventIdParam) : null,
-          getAllEvents(),
-        ]);
-        setAvailableEvents(allList || []);
+        const targetData = await getEventByIdOrSlug(eventIdParam);
         if (targetData) {
           setEvt(targetData);
-        } else if (allList && allList.length > 0) {
-          setEvt(allList[0]);
+        } else {
+          setEvt(null);
         }
       } catch (err) {
         console.error("Error loading event data:", err);
@@ -358,8 +354,64 @@ export default function DynamicRegistrationPage() {
         setEventLoading(false);
       }
     }
-    initEvents();
+    initEvent();
   }, [eventIdParam]);
+
+  // Session Storage Persistence: Restore Saved State
+  useEffect(() => {
+    if (evt?.id) {
+      try {
+        const saved = sessionStorage.getItem(`cgs_reg_${evt.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.selectedTypeId) setSelectedTypeId(parsed.selectedTypeId);
+          if (parsed.numParticipants) setNumParticipants(parsed.numParticipants);
+          if (parsed.teamInfo) setTeamInfo(parsed.teamInfo);
+          if (parsed.primaryParticipant) setPrimaryParticipant(parsed.primaryParticipant);
+          if (parsed.additionalParticipants) setAdditionalParticipants(parsed.additionalParticipants);
+          if (parsed.customFieldValues) setCustomFieldValues(parsed.customFieldValues);
+          if (parsed.signatureName) setSignatureName(parsed.signatureName);
+          if (parsed.agreeCorrect !== undefined) setAgreeCorrect(parsed.agreeCorrect);
+          if (parsed.agreeRules !== undefined) setAgreeRules(parsed.agreeRules);
+        }
+      } catch (e) {
+        console.warn("Could not restore session storage state:", e);
+      }
+    }
+  }, [evt?.id]);
+
+  // Session Storage Persistence: Save Form Changes
+  useEffect(() => {
+    if (evt?.id) {
+      try {
+        const stateToSave = {
+          selectedTypeId,
+          numParticipants,
+          teamInfo,
+          primaryParticipant,
+          additionalParticipants,
+          customFieldValues,
+          signatureName,
+          agreeCorrect,
+          agreeRules,
+        };
+        sessionStorage.setItem(`cgs_reg_${evt.id}`, JSON.stringify(stateToSave));
+      } catch (e) {
+        console.warn("Could not save to session storage:", e);
+      }
+    }
+  }, [
+    evt?.id,
+    selectedTypeId,
+    numParticipants,
+    teamInfo,
+    primaryParticipant,
+    additionalParticipants,
+    customFieldValues,
+    signatureName,
+    agreeCorrect,
+    agreeRules,
+  ]);
 
   // Auth Redirect check
   useEffect(() => {
@@ -401,31 +453,34 @@ export default function DynamicRegistrationPage() {
     return false;
   }, [evt]);
 
-  // Validation function per step
+  // Validation function per step (5-Step System)
   const validateStep = (step: number): boolean => {
-    setErrorMsg(null);
-
     if (isRegistrationClosed) {
       setErrorMsg("Registrations for this event are currently closed.");
       return false;
     }
 
-    if (step === 1) {
-      if (!evt) {
-        setErrorMsg("Please select an event to proceed.");
-        return false;
-      }
+    if (!evt) {
+      setErrorMsg("Event could not be loaded.");
+      return false;
     }
 
-    if (step === 2) {
+    // Step 1: Participation Type Selection
+    if (step === 1) {
       if (!currentParticipationType) {
         setErrorMsg("Please select a participation option.");
         return false;
       }
+      if (currentParticipationType.maxParticipants > 1) {
+        if (formConfig.teamSettings?.teamNameRequired && !teamInfo.teamName.trim()) {
+          setErrorMsg("Team Name is required for multi-participant registrations.");
+          return false;
+        }
+      }
     }
 
-    if (step === 3) {
-      // Validate Basic Required Fields for Primary Participant
+    // Step 2: Participant Details
+    if (step === 2) {
       const enabledBasic = (formConfig.basicFields || []).filter((f) => f.enabled && f.required);
       for (const field of enabledBasic) {
         if (field.id === "fullName" && !primaryParticipant.fullName.trim()) {
@@ -463,30 +518,53 @@ export default function DynamicRegistrationPage() {
         }
       }
 
-      // Validate Team details if multi-participant
-      if (currentParticipationType.maxParticipants > 1) {
-        if (formConfig.teamSettings?.teamNameRequired && !teamInfo.teamName.trim()) {
-          setErrorMsg("Team Name is required for multi-participant registrations.");
+      // Validate Additional Participants if multi-participant
+      for (let i = 0; i < additionalParticipants.length; i++) {
+        const extra = additionalParticipants[i];
+        if (!extra.fullName || !extra.fullName.trim()) {
+          setErrorMsg(`Full Name for Participant #${i + 2} is required.`);
           return false;
         }
       }
     }
 
-    if (step === 4) {
-      // Validate Required Documents
+    // Step 3: Documents Upload
+    if (step === 3) {
       const requiredDocsConfig = (formConfig.documents || []).filter((d) => d.required);
       for (const docReq of requiredDocsConfig) {
         if (!uploadedDocs[docReq.id] || (!uploadedDocs[docReq.id].file && !uploadedDocs[docReq.id].url)) {
-          setErrorMsg(`Required document missing: '${docReq.name}'. Please choose a file.`);
+          setErrorMsg(`Required document missing: '${docReq.name}'. Please upload a file.`);
           return false;
         }
+      }
+    }
+
+    // Step 4: Review & Terms Agreement
+    if (step === 4) {
+      if (!agreeCorrect || !agreeRules) {
+        setErrorMsg("Please agree to the declaration terms.");
+        return false;
+      }
+      if (!signatureName.trim()) {
+        setErrorMsg("Please type your full name digital signature.");
+        return false;
       }
     }
 
     return true;
   };
 
+  // Calculate First Incomplete Step
+  const getFirstIncompleteStep = (): number => {
+    for (let s = 1; s <= 4; s++) {
+      if (!validateStep(s)) return s;
+    }
+    return 5;
+  };
+
+  // Step Navigation Handlers
   const goToNextStep = () => {
+    setErrorMsg(null);
     if (!validateStep(activeStep)) return;
     const next = activeStep + 1;
     setActiveStep(next);
@@ -502,23 +580,49 @@ export default function DynamicRegistrationPage() {
     }
   };
 
-  const handleStepClick = (stepNum: number) => {
-    if (stepNum < activeStep) {
-      setErrorMsg(null);
-      setActiveStep(stepNum);
-    } else if (stepNum > activeStep) {
-      if (validateStep(activeStep)) {
-        setActiveStep(stepNum);
+  // Header Stepper Click Handler (Locked Future Navigation Guard)
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep === activeStep) return;
+    setErrorMsg(null);
+
+    if (targetStep < activeStep) {
+      // Going back to edit previous completed step is allowed
+      setActiveStep(targetStep);
+      window.scrollTo({ top: 380, behavior: "smooth" });
+    } else {
+      // Jumping forward: Check that all prior steps are valid
+      for (let s = 1; s < targetStep; s++) {
+        if (!validateStep(s)) {
+          setActiveStep(s);
+          window.scrollTo({ top: 380, behavior: "smooth" });
+          return;
+        }
       }
+      setActiveStep(targetStep);
+      if (targetStep > maxReachedStep) setMaxReachedStep(targetStep);
+      window.scrollTo({ top: 380, behavior: "smooth" });
     }
   };
+
+  // Direct URL / Route Step Protection Guard
+  useEffect(() => {
+    if (!eventLoading && evt) {
+      if (activeStep > 1) {
+        for (let s = 1; s < activeStep; s++) {
+          if (!validateStep(s)) {
+            setActiveStep(s);
+            break;
+          }
+        }
+      }
+    }
+  }, [activeStep, eventLoading, evt]);
 
   // Payment State Machine
   type PaymentState = "idle" | "creating_order" | "verifying" | "verified" | "failed";
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const paymentVerifiedRef = useRef(false);
   const paymentProcessingRef = useRef(false);
 
   // Dynamic Razorpay Checkout SDK Script Loader
@@ -612,6 +716,9 @@ export default function DynamicRegistrationPage() {
         return;
       }
 
+      // Clear session storage upon successful registration
+      if (evt?.id) sessionStorage.removeItem(`cgs_reg_${evt.id}`);
+
       router.push(`/registration-success?registrationId=${encodeURIComponent(regData.registrationId)}`);
     } catch (err: any) {
       console.error("Registration pipeline error:", err);
@@ -626,9 +733,12 @@ export default function DynamicRegistrationPage() {
   const handleFinalPayment = async () => {
     if (submittingPayment || paymentProcessingRef.current) return;
 
-    if (!agreeCorrect || !agreeRules || !signatureName.trim()) {
-      setErrorMsg("Please agree to the declaration terms and type your full name signature.");
-      return;
+    // Final sanity check on all prior steps before starting payment
+    for (let s = 1; s <= 4; s++) {
+      if (!validateStep(s)) {
+        setActiveStep(s);
+        return;
+      }
     }
 
     if (!evt) return;
@@ -778,73 +888,107 @@ export default function DynamicRegistrationPage() {
     );
   }
 
+  if (!evt) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F8FAFC" }}>
+        <Navbar />
+        <div style={{ maxWidth: 800, margin: "80px auto", padding: "0 20px", textAlign: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 24, padding: 40, border: "1.5px solid #E2E8F0", boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
+            <AlertTriangle size={48} color="#DC2626" style={{ marginBottom: 16 }} />
+            <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", marginBottom: 8 }}>
+              Event Not Found
+            </h2>
+            <p style={{ fontSize: 15, color: "#64748B", marginBottom: 24 }}>
+              The event you requested could not be located or is no longer available.
+            </p>
+            <Link
+              href="/events"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "12px 28px",
+                borderRadius: 14,
+                background: "#6D28D9",
+                color: "#fff",
+                fontWeight: 800,
+                textDecoration: "none",
+              }}
+            >
+              Browse All Events <ChevronRight size={18} />
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "inherit" }}>
       <Navbar />
 
       <div style={{ maxWidth: 1200, margin: "32px auto 80px", padding: "0 24px" }}>
-        {/* Banner Card */}
-        {evt && (
-          <div
-            style={{
-              background: "linear-gradient(135deg, #090314 0%, #1A0A3A 40%, #2E1065 75%, #4C1D95 100%)",
-              borderRadius: 24,
-              padding: "32px 36px",
-              color: "#fff",
-              marginBottom: 32,
-              boxShadow: "0 20px 50px rgba(15, 10, 40, 0.15)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 20,
-            }}
-          >
-            <div>
-              <span
-                style={{
-                  background: "rgba(167, 139, 250, 0.2)",
-                  color: "#E9D5FF",
-                  padding: "4px 14px",
-                  borderRadius: 20,
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
-                }}
-              >
-                {evt.category} EVENT REGISTRATION
-              </span>
-              <h1 style={{ fontSize: 32, fontWeight: 900, margin: "10px 0 6px", color: "#fff" }}>
-                {evt.title}
-              </h1>
-              <p style={{ fontSize: 14, color: "#C4B5FD", margin: 0 }}>
-                Venue: <strong>{evt.venue}, {evt.city}</strong> • Date: <strong>{evt.date}</strong>
-              </p>
-            </div>
-
-            <div
+        {/* Banner Card displaying Selected Event Context */}
+        <div
+          style={{
+            background: "linear-gradient(135deg, #090314 0%, #1A0A3A 40%, #2E1065 75%, #4C1D95 100%)",
+            borderRadius: 24,
+            padding: "32px 36px",
+            color: "#fff",
+            marginBottom: 32,
+            boxShadow: "0 20px 50px rgba(15, 10, 40, 0.15)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 20,
+          }}
+        >
+          <div>
+            <span
               style={{
-                background: "rgba(255, 255, 255, 0.1)",
-                backdropFilter: "blur(10px)",
-                border: "1px solid rgba(255, 255, 255, 0.2)",
-                borderRadius: 18,
-                padding: "16px 24px",
-                textAlign: "right",
+                background: "rgba(167, 139, 250, 0.2)",
+                color: "#E9D5FF",
+                padding: "4px 14px",
+                borderRadius: 20,
+                fontSize: 11.5,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 1,
               }}
             >
-              <div style={{ fontSize: 12, color: "#C4B5FD", fontWeight: 700 }}>SELECTED OPTION FEE</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: "#86EFAC" }}>
-                {calculatedFeeInfo.display}
-              </div>
-              <div style={{ fontSize: 12, color: "#E9D5FF" }}>
-                Option: {currentParticipationType.name}
-              </div>
+              {evt.category} EVENT REGISTRATION
+            </span>
+            <h1 style={{ fontSize: 32, fontWeight: 900, margin: "10px 0 6px", color: "#fff" }}>
+              {evt.title}
+            </h1>
+            <p style={{ fontSize: 14, color: "#C4B5FD", margin: 0 }}>
+              Venue: <strong>{evt.venue}, {evt.city}</strong> • Date: <strong>{evt.date}</strong>
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "rgba(255, 255, 255, 0.1)",
+              backdropFilter: "blur(10px)",
+              border: "1px solid rgba(255, 255, 255, 0.2)",
+              borderRadius: 18,
+              padding: "16px 24px",
+              textAlign: "right",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "#C4B5FD", fontWeight: 700 }}>SELECTED OPTION FEE</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: "#86EFAC" }}>
+              {calculatedFeeInfo.display}
+            </div>
+            <div style={{ fontSize: 12, color: "#E9D5FF" }}>
+              Option: {currentParticipationType.name}
             </div>
           </div>
-        )}
+        </div>
 
-        {/* 6-STEP NAVIGATION HEADER */}
+        {/* 5-STEP NAVIGATION HEADER */}
         <div
           style={{
             background: "#ffffff",
@@ -861,15 +1005,16 @@ export default function DynamicRegistrationPage() {
           }}
         >
           {[
-            { num: 1, label: "Step 1", sub: "Select Event" },
-            { num: 2, label: "Step 2", sub: "Participation Type" },
-            { num: 3, label: "Step 3", sub: "Participant Details" },
-            { num: 4, label: "Step 4", sub: "Documents" },
-            { num: 5, label: "Step 5", sub: "Review" },
-            { num: 6, label: "Step 6", sub: "Payment" },
+            { num: 1, label: "Step 1", sub: "Participation Type" },
+            { num: 2, label: "Step 2", sub: "Participant Details" },
+            { num: 3, label: "Step 3", sub: "Documents" },
+            { num: 4, label: "Step 4", sub: "Review" },
+            { num: 5, label: "Step 5", sub: "Payment" },
           ].map((s) => {
             const isActive = activeStep === s.num;
             const isCompleted = s.num < activeStep;
+            const isUnlocked = s.num <= maxReachedStep || s.num === activeStep;
+
             return (
               <button
                 key={s.num}
@@ -881,7 +1026,8 @@ export default function DynamicRegistrationPage() {
                   gap: 10,
                   background: "transparent",
                   border: "none",
-                  cursor: "pointer",
+                  cursor: isUnlocked || isCompleted ? "pointer" : "not-allowed",
+                  opacity: isUnlocked || isCompleted ? 1 : 0.45,
                   padding: "8px 12px",
                   borderRadius: 12,
                   whiteSpace: "nowrap",
@@ -944,79 +1090,14 @@ export default function DynamicRegistrationPage() {
 
         {/* MAIN STEP CARDS */}
         <div style={{ background: "#ffffff", borderRadius: 24, border: "1.5px solid #E2E8F0", padding: 36, boxShadow: "0 8px 30px rgba(0,0,0,0.04)" }}>
-          {/* STEP 1: SELECT EVENT */}
+          {/* STEP 1: SELECT PARTICIPATION TYPE */}
           {activeStep === 1 && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-                Step 1: Select Event
+                Step 1: Select Participation Option
               </h2>
               <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
-                Choose the event you wish to register for from CGS Entertainments upcoming events.
-              </p>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-                {availableEvents.map((eItem) => {
-                  const isSel = evt?.id === eItem.id;
-                  return (
-                    <div
-                      key={eItem.id}
-                      onClick={() => setEvt(eItem)}
-                      style={{
-                        border: `2px solid ${isSel ? "#6D28D9" : "#E2E8F0"}`,
-                        background: isSel ? "#FAF5FF" : "#fff",
-                        borderRadius: 20,
-                        padding: 20,
-                        cursor: "pointer",
-                        transition: "all 0.25s",
-                        boxShadow: isSel ? "0 8px 24px rgba(109, 40, 217, 0.15)" : "none",
-                      }}
-                    >
-                      <span
-                        style={{
-                          background: "#6D28D9",
-                          color: "#fff",
-                          fontSize: 11,
-                          fontWeight: 800,
-                          padding: "3px 10px",
-                          borderRadius: 12,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {eItem.category}
-                      </span>
-                      <h3 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "10px 0 6px" }}>
-                        {eItem.title}
-                      </h3>
-                      <p style={{ fontSize: 13, color: "#64748B", margin: 0 }}>
-                        📍 {eItem.venue}, {eItem.city}
-                      </p>
-                      <p style={{ fontSize: 13, color: "#64748B", margin: "4px 0 14px" }}>
-                        📅 {eItem.date}
-                      </p>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: isSel ? "#6D28D9" : "#475569" }}>
-                          {isSel ? "✓ Selected Event" : "Click to Select"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ marginTop: 32, textAlign: "right" }}>
-                <SaveContinueBtn label="Continue to Participation Type" onClick={goToNextStep} />
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: SELECT PARTICIPATION TYPE */}
-          {activeStep === 2 && (
-            <div>
-              <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-                Step 2: Select Participation Option
-              </h2>
-              <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
-                Configured options for <strong>{evt?.title}</strong>. Selecting an option automatically updates your payable registration fee.
+                Configured options for <strong>{evt.title}</strong>. Selecting an option automatically updates your payable registration fee.
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 20 }}>
@@ -1053,20 +1134,19 @@ export default function DynamicRegistrationPage() {
                 })}
               </div>
 
-              <div style={{ marginTop: 36, display: "flex", justifyContent: "space-between" }}>
-                <BackBtn onClick={goToPrevStep} />
+              <div style={{ marginTop: 36, textAlign: "right" }}>
                 <SaveContinueBtn label="Continue to Participant Details" onClick={goToNextStep} />
               </div>
             </div>
           )}
 
-          {/* STEP 3: PARTICIPANT DETAILS */}
-          {activeStep === 3 && (
+          {/* STEP 2: PARTICIPANT DETAILS */}
+          {activeStep === 2 && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 16 }}>
                 <div>
                   <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 4px" }}>
-                    Step 3: Participant Details ({currentParticipationType.name})
+                    Step 2: Participant Details ({currentParticipationType.name})
                   </h2>
                   <p style={{ fontSize: 14, color: "#64748B", margin: 0 }}>
                     Enter information for all participants under option <strong>{currentParticipationType.name}</strong>.
@@ -1342,14 +1422,14 @@ export default function DynamicRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 4: DOCUMENTS */}
-          {activeStep === 4 && (
+          {/* STEP 3: DOCUMENTS */}
+          {activeStep === 3 && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-                Step 4: Upload Required Documents
+                Step 3: Upload Required Documents
               </h2>
               <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
-                Provide required document files for <strong>{evt?.title}</strong>.
+                Provide required document files for <strong>{evt.title}</strong>.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -1431,11 +1511,11 @@ export default function DynamicRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 5: REVIEW */}
-          {activeStep === 5 && (
+          {/* STEP 4: REVIEW */}
+          {activeStep === 4 && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-                Step 5: Review Registration Details
+                Step 4: Review Registration Details
               </h2>
               <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
                 Verify all information before proceeding to payment.
@@ -1449,7 +1529,7 @@ export default function DynamicRegistrationPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 14 }}>
                   <div>
                     <span style={{ color: "#64748B" }}>Event:</span>{" "}
-                    <strong>{evt?.title}</strong>
+                    <strong>{evt.title}</strong>
                   </div>
                   <div>
                     <span style={{ color: "#64748B" }}>Participation Option:</span>{" "}
@@ -1516,11 +1596,11 @@ export default function DynamicRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 6: PAYMENT */}
-          {activeStep === 6 && (
+          {/* STEP 5: PAYMENT */}
+          {activeStep === 5 && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-                Step 6: Payment &amp; Confirmation
+                Step 5: Payment &amp; Confirmation
               </h2>
               <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
                 Complete payment via Razorpay Payment Gateway. Server validates authoritative fee.
@@ -1534,7 +1614,7 @@ export default function DynamicRegistrationPage() {
                   {calculatedFeeInfo.display}
                 </div>
                 <p style={{ fontSize: 14, color: "#15803D", margin: "0 0 24px" }}>
-                  Event: {evt?.title} ({currentParticipationType.name})
+                  Event: {evt.title} ({currentParticipationType.name})
                 </p>
 
                 <div style={{ maxWidth: 420, margin: "0 auto" }}>

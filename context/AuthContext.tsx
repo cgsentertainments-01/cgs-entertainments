@@ -18,18 +18,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
+  const fetchedUserRef = React.useRef<string | null>(null);
+
   // Helper to fetch matching admin profile from public.admins
   const fetchAdminProfile = useCallback(
-    async (authUser: User | null): Promise<AdminProfile | null> => {
+    async (authUser: User | null, force = false): Promise<AdminProfile | null> => {
       if (!authUser) {
+        fetchedUserRef.current = null;
         setAdminProfile(null);
         return null;
       }
 
+      if (!force && fetchedUserRef.current === authUser.id) {
+        return adminProfile;
+      }
+
       try {
+        fetchedUserRef.current = authUser.id;
         const { data, error } = await supabase
           .from("admins")
-          .select("*")
+          .select("id, auth_user_id, name, email, phone, role, avatar, is_active, last_login")
           .or(`auth_user_id.eq.${authUser.id},id.eq.${authUser.id},email.eq.${authUser.email}`)
           .maybeSingle();
 
@@ -61,50 +69,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
     },
-    [supabase]
+    [supabase, adminProfile]
   );
 
   const refreshAdminProfile = useCallback(async () => {
     const {
       data: { user: currentUser },
     } = await supabase.auth.getUser();
-    return await fetchAdminProfile(currentUser);
+    return await fetchAdminProfile(currentUser, true);
   }, [supabase, fetchAdminProfile]);
 
   useEffect(() => {
-    // 1. Get initial session
-    const getInitialSession = async () => {
-      try {
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession();
-        setSession(initialSession);
-        setUser(initialSession?.user ?? null);
-        if (initialSession?.user) {
-          await fetchAdminProfile(initialSession.user);
-        } else {
-          setAdminProfile(null);
-        }
-      } catch (err) {
-        console.error("Error fetching initial session:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getInitialSession();
-
-    // 2. Listen to Auth state changes
+    // Listen to Auth state changes (handles initial session & updates)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       setSession(currentSession);
       const authUser = currentSession?.user ?? null;
       setUser(authUser);
 
       if (authUser) {
-        await fetchAdminProfile(authUser);
+        await fetchAdminProfile(authUser, event === "SIGNED_IN" || event === "USER_UPDATED");
       } else {
+        fetchedUserRef.current = null;
         setAdminProfile(null);
       }
       setLoading(false);
