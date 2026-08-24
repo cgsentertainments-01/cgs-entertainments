@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       bucket: BUCKET_NAME,
       path: uploadedPath,
       videoPath: uploadedPath, // e.g. "videos/1723456789012_a1b2c3d_audition.mp4"
+      url: uploadedPath,
       fullStoragePath: `${BUCKET_NAME}/${uploadedPath}`,
       fileName: file.name,
       fileSize: file.size,

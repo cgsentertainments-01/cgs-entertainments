@@ -340,8 +340,8 @@ export default function ContactPage() {
               </p>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <SocialChip icon={<Instagram size={16} />} label="cgs_entertainments_88112" color="#E1306C" href="https://instagram.com/cgs_entertainments_88112" />
-                <SocialChip icon={<Youtube size={16} />} label="Cgs Entertainments" color="#FF0000" href="https://youtube.com" />
+                <SocialChip icon={<Instagram size={16} />} label="cgs_entertainments_88112" color="#E1306C" href="https://www.instagram.com/cgs_entertainment_88112/" />
+                <SocialChip icon={<Youtube size={16} />} label="Cgs Entertainments" color="#FF0000" href="https://www.youtube.com/@CgsEntertainments" />
                 <SocialChip icon={<MessageCircle size={16} />} label="WhatsApp (8019488112)" color="#25D366" href="https://wa.me/918019488112" />
               </div>
             </CardWrapper>

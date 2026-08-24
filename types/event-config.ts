@@ -75,27 +75,28 @@ export interface EventFormConfig {
  * Returns a robust default EventFormConfig tailored to the event category
  * if an event does not have a customized form_config saved.
  */
-export function getDefaultFormConfig(category?: string): EventFormConfig {
+export function getDefaultFormConfig(category?: string, baseFee?: number): EventFormConfig {
   const cat = (category || "Dance").toLowerCase();
+  const fee = typeof baseFee === "number" && !isNaN(baseFee) && baseFee >= 0 ? baseFee : 0;
 
   let participationTypes: ParticipationTypeConfig[] = [];
   if (cat.includes("dance")) {
     participationTypes = [
-      { id: "solo", name: "Solo", minParticipants: 1, maxParticipants: 1, fee: 500, isActive: true, order: 1 },
-      { id: "duo", name: "Duo", minParticipants: 2, maxParticipants: 2, fee: 800, isActive: true, order: 2 },
-      { id: "trio", name: "Trio", minParticipants: 3, maxParticipants: 3, fee: 1000, isActive: true, order: 3 },
-      { id: "group", name: "Group", minParticipants: 4, maxParticipants: 10, fee: 2000, isActive: true, order: 4 },
+      { id: "solo", name: "Solo", minParticipants: 1, maxParticipants: 1, fee, isActive: true, order: 1 },
+      { id: "duo", name: "Duo", minParticipants: 2, maxParticipants: 2, fee, isActive: true, order: 2 },
+      { id: "trio", name: "Trio", minParticipants: 3, maxParticipants: 3, fee, isActive: true, order: 3 },
+      { id: "group", name: "Group", minParticipants: 4, maxParticipants: 10, fee, isActive: true, order: 4 },
     ];
   } else if (cat.includes("singing") || cat.includes("music")) {
     participationTypes = [
-      { id: "solo", name: "Solo Vocal", minParticipants: 1, maxParticipants: 1, fee: 600, isActive: true, order: 1 },
-      { id: "duet", name: "Duet", minParticipants: 2, maxParticipants: 2, fee: 1000, isActive: true, order: 2 },
-      { id: "band", name: "Group Band", minParticipants: 3, maxParticipants: 8, fee: 2500, isActive: true, order: 3 },
+      { id: "solo", name: "Solo Vocal", minParticipants: 1, maxParticipants: 1, fee, isActive: true, order: 1 },
+      { id: "duet", name: "Duet", minParticipants: 2, maxParticipants: 2, fee, isActive: true, order: 2 },
+      { id: "band", name: "Group Band", minParticipants: 3, maxParticipants: 8, fee, isActive: true, order: 3 },
     ];
   } else {
     participationTypes = [
-      { id: "solo", name: "Solo", minParticipants: 1, maxParticipants: 1, fee: 500, isActive: true, order: 1 },
-      { id: "group", name: "Group", minParticipants: 2, maxParticipants: 6, fee: 1500, isActive: true, order: 2 },
+      { id: "solo", name: "Solo", minParticipants: 1, maxParticipants: 1, fee, isActive: true, order: 1 },
+      { id: "group", name: "Group", minParticipants: 2, maxParticipants: 6, fee, isActive: true, order: 2 },
     ];
   }
 

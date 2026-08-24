@@ -106,6 +106,7 @@ export function revalidateEventCaches(id?: string, slug?: string) {
   try {
     revalidatePath("/");
     revalidatePath("/events");
+    revalidatePath("/admin/events");
     revalidatePath("/events/[slug]", "page");
     revalidatePath("/register/[eventId]", "page");
     if (slug) {
@@ -115,6 +116,7 @@ export function revalidateEventCaches(id?: string, slug?: string) {
     if (id) {
       revalidatePath(`/register/${id}`);
       revalidatePath(`/events/${id}`);
+      revalidatePath(`/admin/events/${id}/edit`);
     }
     revalidateTag("events");
     if (id) revalidateTag(`event:${id}`);

@@ -57,7 +57,7 @@ export function Footer() {
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {/* Instagram */}
               <a
-                href="https://instagram.com/cgs_entertainments_88112"
+                href="https://www.instagram.com/cgs_entertainment_88112/"
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Instagram (@cgs_entertainments_88112)"
@@ -81,7 +81,7 @@ export function Footer() {
 
               {/* YouTube */}
               <a
-                href="https://youtube.com"
+                href="https://www.youtube.com/@CgsEntertainments"
                 target="_blank"
                 rel="noopener noreferrer"
                 title="YouTube (Cgs Entertainments)"

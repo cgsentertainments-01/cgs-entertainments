@@ -34,7 +34,7 @@ import {
   Check,
   Sparkles,
 } from "lucide-react";
-import { EventItem, getEventByIdOrSlug } from "@/services/event.service";
+import { EventItem, getEventByIdOrSlug, normalizeEventIdentifier } from "@/services/event.service";
 import {
   EventFormConfig,
   getDefaultFormConfig,
@@ -202,24 +202,25 @@ export default function DynamicRegistrationPage() {
   const params = useParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const eventIdParam = (params?.eventId as string) || "";
+  const rawEventIdParam = (params?.eventId as string) || "";
+  const cleanEventIdParam = useMemo(() => normalizeEventIdentifier(rawEventIdParam), [rawEventIdParam]);
 
   // Event loading & target event state
   const [evt, setEvt] = useState<EventItem | null>(null);
   const [eventLoading, setEventLoading] = useState(true);
 
-  // Stepper state: Step 1 to Step 5 (Removed Event Selection Step)
+  // Stepper state: Step 1 to Step 5
   const [activeStep, setActiveStep] = useState(1);
   const [maxReachedStep, setMaxReachedStep] = useState(1);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
-  // Event Form Configuration (Dynamic from Supabase / Store)
+  // Dynamic Event Form Configuration
   const formConfig: EventFormConfig = useMemo(() => {
     if (evt && evt.form_config) {
       return evt.form_config;
     }
-    return getDefaultFormConfig(evt?.category || "Dance");
+    return getDefaultFormConfig(evt?.category || "Dance", evt?.registration_fee);
   }, [evt]);
 
   // Active participation types
@@ -245,7 +246,7 @@ export default function DynamicRegistrationPage() {
         name: "Solo",
         minParticipants: 1,
         maxParticipants: 1,
-        fee: evt?.registration_fee || 500,
+        fee: evt?.registration_fee || 0,
         isActive: true,
         order: 1,
       }
@@ -254,6 +255,12 @@ export default function DynamicRegistrationPage() {
 
   // Dynamic Participant count state
   const [numParticipants, setNumParticipants] = useState<number>(1);
+
+  // Multi-participant check: Duo, Trio, Group/Multiple
+  const isMultiParticipant = useMemo(() => {
+    if (!currentParticipationType) return false;
+    return (currentParticipationType.maxParticipants || 1) > 1 || (currentParticipationType.minParticipants || 1) > 1;
+  }, [currentParticipationType]);
 
   // When selected participation type changes, adjust numParticipants to min
   useEffect(() => {
@@ -336,32 +343,42 @@ export default function DynamicRegistrationPage() {
   // Fetch Target Event Details
   useEffect(() => {
     async function initEvent() {
-      if (!eventIdParam) {
+      if (!cleanEventIdParam) {
         setEventLoading(false);
         return;
       }
       try {
         setEventLoading(true);
-        const targetData = await getEventByIdOrSlug(eventIdParam);
+        console.log(`[FRONTEND REGISTRATION] Loading event parameter: "${cleanEventIdParam}"`);
+        const targetData = await getEventByIdOrSlug(cleanEventIdParam);
         if (targetData) {
+          console.log(`[FRONTEND REGISTRATION] Loaded event: "${targetData.title}" (${targetData.id})`);
           setEvt(targetData);
         } else {
+          console.warn(`[FRONTEND REGISTRATION] Event not found for parameter: "${cleanEventIdParam}"`);
           setEvt(null);
         }
       } catch (err) {
         console.error("Error loading event data:", err);
+        setEvt(null);
       } finally {
         setEventLoading(false);
       }
     }
     initEvent();
-  }, [eventIdParam]);
+  }, [cleanEventIdParam]);
+
+  // Session Storage Persistence Key: Consistent Key using cleanEventIdParam or evt.id
+  const sessionStorageKey = useMemo(() => {
+    const keyId = evt?.id || cleanEventIdParam;
+    return keyId ? `cgs_reg_${keyId}` : "";
+  }, [evt?.id, cleanEventIdParam]);
 
   // Session Storage Persistence: Restore Saved State
   useEffect(() => {
-    if (evt?.id) {
+    if (sessionStorageKey) {
       try {
-        const saved = sessionStorage.getItem(`cgs_reg_${evt.id}`);
+        const saved = sessionStorage.getItem(sessionStorageKey);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.selectedTypeId) setSelectedTypeId(parsed.selectedTypeId);
@@ -378,11 +395,11 @@ export default function DynamicRegistrationPage() {
         console.warn("Could not restore session storage state:", e);
       }
     }
-  }, [evt?.id]);
+  }, [sessionStorageKey]);
 
   // Session Storage Persistence: Save Form Changes
   useEffect(() => {
-    if (evt?.id) {
+    if (sessionStorageKey && evt?.id) {
       try {
         const stateToSave = {
           selectedTypeId,
@@ -395,12 +412,13 @@ export default function DynamicRegistrationPage() {
           agreeCorrect,
           agreeRules,
         };
-        sessionStorage.setItem(`cgs_reg_${evt.id}`, JSON.stringify(stateToSave));
+        sessionStorage.setItem(sessionStorageKey, JSON.stringify(stateToSave));
       } catch (e) {
         console.warn("Could not save to session storage:", e);
       }
     }
   }, [
+    sessionStorageKey,
     evt?.id,
     selectedTypeId,
     numParticipants,
@@ -419,10 +437,10 @@ export default function DynamicRegistrationPage() {
       const currentPath =
         typeof window !== "undefined"
           ? window.location.pathname
-          : `/register/${eventIdParam}`;
+          : `/register/${cleanEventIdParam}`;
       router.push(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
     }
-  }, [user, authLoading, router, eventIdParam]);
+  }, [user, authLoading, router, cleanEventIdParam]);
 
   // Check Registration Availability
   const isRegistrationClosed = useMemo(() => {
@@ -453,7 +471,7 @@ export default function DynamicRegistrationPage() {
     return false;
   }, [evt]);
 
-  // Validation function per step (5-Step System)
+  // Validation function per step
   const validateStep = (step: number): boolean => {
     if (isRegistrationClosed) {
       setErrorMsg("Registrations for this event are currently closed.");
@@ -471,16 +489,19 @@ export default function DynamicRegistrationPage() {
         setErrorMsg("Please select a participation option.");
         return false;
       }
-      if (currentParticipationType.maxParticipants > 1) {
-        if (formConfig.teamSettings?.teamNameRequired && !teamInfo.teamName.trim()) {
-          setErrorMsg("Team Name is required for multi-participant registrations.");
-          return false;
-        }
+      if (isMultiParticipant && !teamInfo.teamName.trim()) {
+        setErrorMsg(`Team Name is required for ${currentParticipationType.name} registration.`);
+        return false;
       }
     }
 
     // Step 2: Participant Details
     if (step === 2) {
+      if (isMultiParticipant && !teamInfo.teamName.trim()) {
+        setErrorMsg(`Team Name is required for ${currentParticipationType.name} registration.`);
+        return false;
+      }
+
       const enabledBasic = (formConfig.basicFields || []).filter((f) => f.enabled && f.required);
       for (const field of enabledBasic) {
         if (field.id === "fullName" && !primaryParticipant.fullName.trim()) {
@@ -554,14 +575,6 @@ export default function DynamicRegistrationPage() {
     return true;
   };
 
-  // Calculate First Incomplete Step
-  const getFirstIncompleteStep = (): number => {
-    for (let s = 1; s <= 4; s++) {
-      if (!validateStep(s)) return s;
-    }
-    return 5;
-  };
-
   // Step Navigation Handlers
   const goToNextStep = () => {
     setErrorMsg(null);
@@ -580,17 +593,15 @@ export default function DynamicRegistrationPage() {
     }
   };
 
-  // Header Stepper Click Handler (Locked Future Navigation Guard)
+  // Header Stepper Click Handler
   const handleStepClick = (targetStep: number) => {
     if (targetStep === activeStep) return;
     setErrorMsg(null);
 
     if (targetStep < activeStep) {
-      // Going back to edit previous completed step is allowed
       setActiveStep(targetStep);
       window.scrollTo({ top: 380, behavior: "smooth" });
     } else {
-      // Jumping forward: Check that all prior steps are valid
       for (let s = 1; s < targetStep; s++) {
         if (!validateStep(s)) {
           setActiveStep(s);
@@ -604,7 +615,7 @@ export default function DynamicRegistrationPage() {
     }
   };
 
-  // Direct URL / Route Step Protection Guard
+  // Direct URL Step Protection Guard
   useEffect(() => {
     if (!eventLoading && evt) {
       if (activeStep > 1) {
@@ -619,7 +630,7 @@ export default function DynamicRegistrationPage() {
   }, [activeStep, eventLoading, evt]);
 
   // Payment State Machine
-  type PaymentState = "idle" | "creating_order" | "verifying" | "verified" | "failed";
+  type PaymentState = "idle" | "creating_pending" | "creating_order" | "verifying" | "verified" | "failed";
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -640,47 +651,99 @@ export default function DynamicRegistrationPage() {
     });
   };
 
-  // Registration Execution Pipeline
-  const executeRegistrationPipeline = async (payDetails: any) => {
-    setStatusMessage("Saving Registration & Documents...");
+  // ─── PHASE 1 REFACTORED REGISTRATION & PAYMENT PIPELINE ───
+  // 1. Create PENDING registration in Supabase BEFORE payment
+  // 2. Pass exact pending registrationId to Razorpay order creation
+  // 3. Launch Razorpay modal
+  // 4. Update the EXACT SAME registration row upon signature verification
+  const handleFinalPayment = async () => {
+    if (submittingPayment || paymentProcessingRef.current) return;
+
+    // Sanity check on all prior steps
+    for (let s = 1; s <= 4; s++) {
+      if (!validateStep(s)) {
+        setActiveStep(s);
+        return;
+      }
+    }
+
+    if (!evt) return;
+
+    setSubmittingPayment(true);
+    paymentProcessingRef.current = true;
+    setErrorMsg(null);
+
     try {
-      // 1. Upload files
+      // -----------------------------------------------------------------------
+      // STEP A: UPLOAD DOCUMENT FILES
+      // -----------------------------------------------------------------------
+      setPaymentState("creating_pending");
+      setStatusMessage("Saving Documents & Creating Registration...");
+
       const docUrls: Record<string, string> = {};
+      let extractedVideoUrl: string | null = null;
+      let extractedVideoPath: string | null = null;
+
       for (const [docId, docData] of Object.entries(uploadedDocs)) {
         if (docData.file) {
           try {
+            const isVideo =
+              docData.file.type.startsWith("video/") ||
+              docId.toLowerCase().includes("video");
+            const uploadEndpoint = isVideo ? "/api/uploads/video" : "/api/uploads/document";
+
             const fd = new FormData();
             fd.append("file", docData.file);
             fd.append("type", docId);
-            const res = await fetch("/api/uploads/document", { method: "POST", body: fd });
+
+            console.log(`[FRONTEND REGISTRATION] Uploading document '${docId}' (${docData.file.name}) to '${uploadEndpoint}'...`);
+            const res = await fetch(uploadEndpoint, { method: "POST", body: fd });
             const data = await res.json();
             if (res.ok && data.success) {
-              docUrls[docId] = data.url || data.path;
+              const savedRef = data.videoPath || data.path || data.url;
+              docUrls[docId] = savedRef;
+              if (isVideo) {
+                extractedVideoUrl = savedRef;
+                extractedVideoPath = data.videoPath || data.path || savedRef;
+              }
+            } else {
+              console.error(`Upload error for '${docId}':`, data.error);
+              setErrorMsg(data.error || `Upload failed for document '${docId}'.`);
+              setSubmittingPayment(false);
+              paymentProcessingRef.current = false;
+              return;
             }
-          } catch (e) {
+          } catch (e: any) {
             console.warn(`Doc upload warning for ${docId}:`, e);
           }
         } else if (docData.url) {
           docUrls[docId] = docData.url;
+          if (docId.toLowerCase().includes("video")) {
+            extractedVideoUrl = docData.url;
+            extractedVideoPath = docData.url;
+          }
         }
       }
 
-      // 2. Submit registration
+      // -----------------------------------------------------------------------
+      // STEP B: CREATE PENDING REGISTRATION IN SUPABASE (BEFORE PAYMENT)
+      // -----------------------------------------------------------------------
+      const finalPayableAmount = calculatedFeeInfo.amount;
+      const isFree = finalPayableAmount === 0;
+
       const regRes = await fetch("/api/registrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          eventId: evt?.id,
-          compType: currentParticipationType.name,
+          eventId: evt.id,
+          participationType: currentParticipationType.name,
           participationTypeId: currentParticipationType.id,
           numParticipants,
-          category: evt?.category,
-          paymentDetails: payDetails,
-          razorpayPaymentId: payDetails.paymentId,
-          razorpayOrderId: payDetails.orderId,
-          razorpaySignature: payDetails.signature,
-          paymentStatus: "paid",
-          registrationStatus: "confirmed",
+          category: evt.category,
+          registrationStatus: isFree ? "confirmed" : "payment_pending",
+          paymentStatus: isFree ? "paid" : "unpaid",
+          videoUrl: extractedVideoUrl,
+          videoPath: extractedVideoPath,
           participant: {
             fullName: primaryParticipant.fullName,
             dob: primaryParticipant.dob,
@@ -691,6 +754,8 @@ export default function DynamicRegistrationPage() {
             city: primaryParticipant.city,
             state: primaryParticipant.state,
             pincode: primaryParticipant.pincode,
+            videoUrl: extractedVideoUrl,
+            videoPath: extractedVideoPath,
           },
           additionalParticipants,
           teamInfo,
@@ -702,72 +767,44 @@ export default function DynamicRegistrationPage() {
             teamInfo,
             customFields: customFieldValues,
             docUrls,
+            videoUrl: extractedVideoUrl,
+            videoPath: extractedVideoPath,
           }),
         }),
       });
 
       const regData = await regRes.json();
 
-      if (!regRes.ok || !regData.success) {
-        setErrorMsg(regData.error || "Failed to complete registration.");
+      if (!regRes.ok || !regData.success || !regData.registrationId) {
+        paymentProcessingRef.current = false;
+        setErrorMsg(regData.error || "Failed to create pre-payment registration record.");
         setSubmittingPayment(false);
         setPaymentState("failed");
         setStatusMessage(null);
         return;
       }
 
-      // Clear session storage upon successful registration
-      if (evt?.id) sessionStorage.removeItem(`cgs_reg_${evt.id}`);
+      const pendingRegistrationId = regData.registrationId;
+      console.log(`[PIPELINE] Created PENDING registration ID="${pendingRegistrationId}" in Supabase DB.`);
 
-      router.push(`/registration-success?registrationId=${encodeURIComponent(regData.registrationId)}`);
-    } catch (err: any) {
-      console.error("Registration pipeline error:", err);
-      setErrorMsg(err.message || "Failed to complete registration.");
-      setSubmittingPayment(false);
-      setPaymentState("failed");
-      setStatusMessage(null);
-    }
-  };
-
-  // Secure Backend Razorpay Order Creation & Verification
-  const handleFinalPayment = async () => {
-    if (submittingPayment || paymentProcessingRef.current) return;
-
-    // Final sanity check on all prior steps before starting payment
-    for (let s = 1; s <= 4; s++) {
-      if (!validateStep(s)) {
-        setActiveStep(s);
+      // Handle Free Registration
+      if (isFree) {
+        if (sessionStorageKey) sessionStorage.removeItem(sessionStorageKey);
+        router.push(`/registration-success?registrationId=${encodeURIComponent(pendingRegistrationId)}`);
         return;
       }
-    }
 
-    if (!evt) return;
+      // -----------------------------------------------------------------------
+      // STEP C: CREATE RAZORPAY ORDER LINKED TO PENDING REGISTRATION ID
+      // -----------------------------------------------------------------------
+      setPaymentState("creating_order");
+      setStatusMessage("Opening Razorpay Payment Gateway...");
 
-    const finalPayableAmount = calculatedFeeInfo.amount;
-
-    setSubmittingPayment(true);
-    paymentProcessingRef.current = true;
-    setErrorMsg(null);
-
-    // Free event handling
-    if (finalPayableAmount === 0) {
-      const freePayData = {
-        paymentId: `free_pay_${Date.now()}`,
-        orderId: `free_ord_${Date.now()}`,
-        signature: "free_order",
-      };
-      await executeRegistrationPipeline(freePayData);
-      return;
-    }
-
-    setPaymentState("creating_order");
-    setStatusMessage("Opening Razorpay Payment Gateway...");
-
-    try {
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          registrationId: pendingRegistrationId,
           amount: finalPayableAmount,
           eventId: evt.id,
           compType: currentParticipationType.name,
@@ -783,7 +820,7 @@ export default function DynamicRegistrationPage() {
 
       if (!orderRes.ok || !orderData.success) {
         paymentProcessingRef.current = false;
-        setErrorMsg(orderData.error || "Failed to initialize payment.");
+        setErrorMsg(orderData.error || "Failed to initialize payment gateway order.");
         setSubmittingPayment(false);
         setPaymentState("failed");
         setStatusMessage(null);
@@ -793,7 +830,7 @@ export default function DynamicRegistrationPage() {
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
         paymentProcessingRef.current = false;
-        setErrorMsg("Failed to load Razorpay Payment Gateway. Check internet connection.");
+        setErrorMsg("Failed to load Razorpay Payment Gateway SDK. Check internet connection.");
         setSubmittingPayment(false);
         setPaymentState("failed");
         setStatusMessage(null);
@@ -802,6 +839,9 @@ export default function DynamicRegistrationPage() {
 
       const razorpayKey = orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
 
+      // -----------------------------------------------------------------------
+      // STEP D: OPEN RAZORPAY CHECKOUT MODAL
+      // -----------------------------------------------------------------------
       const options = {
         key: razorpayKey,
         amount: orderData.amount,
@@ -817,13 +857,17 @@ export default function DynamicRegistrationPage() {
         theme: { color: "#6D28D9" },
         handler: async function (response: any) {
           setPaymentState("verifying");
-          setStatusMessage("Verifying Payment Signature...");
+          setStatusMessage("Verifying Payment Signature & Confirming Registration...");
 
           try {
+            // -----------------------------------------------------------------
+            // STEP E: VERIFY PAYMENT & CONFIRM THE EXACT SAME REGISTRATION
+            // -----------------------------------------------------------------
             const verifyRes = await fetch("/api/razorpay/verify-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
+                registrationId: pendingRegistrationId,
                 razorpay_order_id: response.razorpay_order_id || orderData.orderId,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
@@ -834,12 +878,9 @@ export default function DynamicRegistrationPage() {
 
             if (verifyRes.ok && verifyData.success && verifyData.verified) {
               setPaymentState("verified");
-              const payData = {
-                paymentId: response.razorpay_payment_id,
-                orderId: response.razorpay_order_id || orderData.orderId,
-                signature: response.razorpay_signature,
-              };
-              await executeRegistrationPipeline(payData);
+              if (sessionStorageKey) sessionStorage.removeItem(sessionStorageKey);
+              const finalConfirmedId = verifyData.registrationId || pendingRegistrationId;
+              router.push(`/registration-success?registrationId=${encodeURIComponent(finalConfirmedId)}`);
             } else {
               paymentProcessingRef.current = false;
               setPaymentState("failed");
@@ -1106,7 +1147,10 @@ export default function DynamicRegistrationPage() {
                   return (
                     <div
                       key={pt.id}
-                      onClick={() => setSelectedTypeId(pt.id)}
+                      onClick={() => {
+                        setSelectedTypeId(pt.id);
+                        if (errorMsg) setErrorMsg(null);
+                      }}
                       style={{
                         border: `2.5px solid ${isSel ? "#6D28D9" : "#E2E8F0"}`,
                         background: isSel ? "#FAF5FF" : "#ffffff",
@@ -1133,6 +1177,71 @@ export default function DynamicRegistrationPage() {
                   );
                 })}
               </div>
+
+              {/* Immediately display Team Name field when a multi-participant option is selected */}
+              {isMultiParticipant && (
+                <div
+                  style={{
+                    marginTop: 24,
+                    background: "#F8FAFC",
+                    border: `1.5px solid ${errorMsg && !teamInfo.teamName.trim() ? "#FECACA" : "#E2E8F0"}`,
+                    borderRadius: 20,
+                    padding: 24,
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
+                  }}
+                >
+                  <h3 style={{ fontSize: 17, fontWeight: 900, color: "#1E293B", margin: "0 0 16px" }}>
+                    Group / Team Details ({currentParticipationType.name})
+                  </h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
+                        Team Name *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter your Team / Group Name"
+                        value={teamInfo.teamName}
+                        onChange={(e) => {
+                          setTeamInfo({ ...teamInfo, teamName: e.target.value });
+                          if (errorMsg) setErrorMsg(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "11px 14px",
+                          borderRadius: 12,
+                          border: `1.5px solid ${errorMsg && !teamInfo.teamName.trim() ? "#DC2626" : "#CBD5E1"}`,
+                          fontSize: 14,
+                          outline: "none",
+                        }}
+                      />
+                      {errorMsg && !teamInfo.teamName.trim() && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#DC2626", marginTop: 4, display: "block" }}>
+                          Team Name is required for {currentParticipationType.name} registration.
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
+                        Team Leader Name (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Leader Full Name"
+                        value={teamInfo.teamLeader}
+                        onChange={(e) => setTeamInfo({ ...teamInfo, teamLeader: e.target.value })}
+                        style={{
+                          width: "100%",
+                          padding: "11px 14px",
+                          borderRadius: 12,
+                          border: "1.5px solid #CBD5E1",
+                          fontSize: 14,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: 36, textAlign: "right" }}>
                 <SaveContinueBtn label="Continue to Participant Details" onClick={goToNextStep} />
@@ -1203,10 +1312,10 @@ export default function DynamicRegistrationPage() {
               )}
 
               {/* Team Information if Multi-participant */}
-              {currentParticipationType.maxParticipants > 1 && (
-                <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 20, padding: 24, marginBottom: 28 }}>
+              {isMultiParticipant && (
+                <div style={{ background: "#F8FAFC", border: `1.5px solid ${errorMsg && !teamInfo.teamName.trim() ? "#FECACA" : "#E2E8F0"}`, borderRadius: 20, padding: 24, marginBottom: 28 }}>
                   <h3 style={{ fontSize: 17, fontWeight: 900, color: "#1E293B", margin: "0 0 16px" }}>
-                    Group / Team Details
+                    Group / Team Details ({currentParticipationType.name})
                   </h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                     <div>
@@ -1217,13 +1326,28 @@ export default function DynamicRegistrationPage() {
                         type="text"
                         placeholder="e.g. Thunder Dancers"
                         value={teamInfo.teamName}
-                        onChange={(e) => setTeamInfo({ ...teamInfo, teamName: e.target.value })}
-                        style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #CBD5E1", fontSize: 14 }}
+                        onChange={(e) => {
+                          setTeamInfo({ ...teamInfo, teamName: e.target.value });
+                          if (errorMsg) setErrorMsg(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "11px 14px",
+                          borderRadius: 12,
+                          border: `1.5px solid ${errorMsg && !teamInfo.teamName.trim() ? "#DC2626" : "#CBD5E1"}`,
+                          fontSize: 14,
+                          outline: "none",
+                        }}
                       />
+                      {errorMsg && !teamInfo.teamName.trim() && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#DC2626", marginTop: 4, display: "block" }}>
+                          Team Name is required for {currentParticipationType.name} registration.
+                        </span>
+                      )}
                     </div>
                     <div>
                       <label style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
-                        Team Leader Name
+                        Team Leader Name (Optional)
                       </label>
                       <input
                         type="text"
@@ -1535,6 +1659,12 @@ export default function DynamicRegistrationPage() {
                     <span style={{ color: "#64748B" }}>Participation Option:</span>{" "}
                     <strong>{currentParticipationType.name}</strong>
                   </div>
+                  {isMultiParticipant && teamInfo.teamName && (
+                    <div>
+                      <span style={{ color: "#64748B" }}>Team Name:</span>{" "}
+                      <strong style={{ color: "#6D28D9" }}>{teamInfo.teamName}</strong>
+                    </div>
+                  )}
                   <div>
                     <span style={{ color: "#64748B" }}>Registrant Name:</span>{" "}
                     <strong>{primaryParticipant.fullName}</strong>
@@ -1603,7 +1733,7 @@ export default function DynamicRegistrationPage() {
                 Step 5: Payment &amp; Confirmation
               </h2>
               <p style={{ fontSize: 14, color: "#64748B", margin: "0 0 24px" }}>
-                Complete payment via Razorpay Payment Gateway. Server validates authoritative fee.
+                A pending registration is saved in Supabase BEFORE Razorpay payment.
               </p>
 
               <div style={{ border: "2px solid #059669", borderRadius: 24, padding: 32, background: "#F0FDF4", textAlign: "center" }}>

@@ -3,17 +3,30 @@ import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { getStoreEvents } from '@/lib/events-store';
-import { transformDbEvent } from '@/services/event.service';
+import { transformDbEvent, normalizeEventIdentifier, isValidUUID } from '@/services/event.service';
 import { getDefaultFormConfig } from '@/types/event-config';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { amount, items, receipt, customerName, email, phone, userId, eventId, compType, participationTypeId, numParticipants } = body;
-    
-    console.log('🔔 Create Razorpay order request:', { 
+    const {
+      registrationId,
       amount,
-      itemsCount: items?.length, 
+      items,
+      receipt,
+      customerName,
+      email,
+      phone,
+      userId,
+      eventId,
+      compType,
+      participationTypeId,
+      numParticipants,
+    } = body;
+
+    console.log('🔔 Create Razorpay order request:', { 
+      registrationId,
+      amount,
       customerName,
       email,
       eventId,
@@ -21,89 +34,127 @@ export async function POST(req: Request) {
       participationTypeId
     });
 
+    const supabase = getSupabaseAdmin();
     let finalAmount = 0;
-    let eventValidated = false;
+    let registrationRecord: any = null;
+    let validated = false;
 
-    // 1. Authoritative Event + Participation Type Fee Validation
-    if (eventId) {
-      const supabase = getSupabaseAdmin();
-      let eventRecord: any = null;
+    // 1. PRIMARY AUTHORITATIVE SOURCE: FETCH EXISTING PENDING REGISTRATION
+    if (registrationId && supabase) {
+      try {
+        const { data: reg, error: regErr } = await supabase
+          .from('registrations')
+          .select('*, events(id, title), participants(id, full_name, email, phone)')
+          .eq('id', registrationId)
+          .maybeSingle();
 
-      if (supabase) {
-        try {
-          const { data } = await supabase
-            .from('events')
-            .select('*')
-            .or(`id.eq.${eventId},slug.eq.${eventId}`)
-            .maybeSingle();
-          if (data) eventRecord = data;
-        } catch (e) {
-          console.warn('Supabase event fetch notice in create-order:', e);
+        if (regErr) {
+          console.warn('Notice querying pending registration in create-order:', regErr.message);
         }
+
+        if (reg) {
+          registrationRecord = reg;
+          finalAmount = Number(reg.amount || 0);
+          validated = true;
+          console.log(`✅ Authoritative amount fetched from pending registration ID="${reg.id}": ₹${finalAmount}`);
+        }
+      } catch (e: any) {
+        console.warn('Exception querying registration in create-order:', e.message);
       }
+    }
 
-      if (!eventRecord) {
-        const storeEvents = getStoreEvents();
-        eventRecord = storeEvents.find((e) => String(e.id) === String(eventId) || e.slug === eventId);
-      }
+    // 2. SECONDARY AUTHORITATIVE SOURCE: FETCH EVENT & FORM CONFIG FEE
+    if (!validated) {
+      const cleanEventId = normalizeEventIdentifier(eventId);
+      if (cleanEventId) {
+        let eventRecord: any = null;
+        const isUUID = isValidUUID(cleanEventId);
 
-      if (eventRecord) {
-        const event = transformDbEvent(eventRecord);
-        const formConfig = event.form_config || getDefaultFormConfig(event.category);
-        const partTypes = formConfig.participationTypes || [];
+        if (supabase) {
+          try {
+            let query = supabase.from('events').select('*');
+            if (isUUID) {
+              query = query.eq('id', cleanEventId);
+            } else {
+              query = query.eq('slug', cleanEventId);
+            }
+            const { data } = await query.maybeSingle();
+            if (data) eventRecord = data;
+          } catch (e) {
+            console.warn('Supabase event fetch notice in create-order:', e);
+          }
+        }
 
-        // Match participation type by ID or Name (case insensitive)
-        const targetTypeIdentifier = String(participationTypeId || compType || '').trim().toLowerCase();
-        const matchedType = partTypes.find(
-          (pt) =>
-            pt.isActive !== false &&
-            (String(pt.id).toLowerCase() === targetTypeIdentifier ||
-              pt.name.toLowerCase() === targetTypeIdentifier ||
-              pt.name.toLowerCase().includes(targetTypeIdentifier) ||
-              targetTypeIdentifier.includes(pt.name.toLowerCase()))
-        );
+        if (!eventRecord) {
+          const storeEvents = getStoreEvents();
+          eventRecord = storeEvents.find(
+            (e) => String(e.id).toLowerCase() === cleanEventId.toLowerCase() || (e.slug && e.slug.toLowerCase() === cleanEventId.toLowerCase())
+          );
+        }
 
-        if (matchedType) {
-          finalAmount = matchedType.fee;
-          eventValidated = true;
-          console.log(`✅ Authoritative fee validated from participation type '${matchedType.name}': ₹${finalAmount}`);
-        } else if (typeof event.registration_fee === 'number') {
-          finalAmount = event.registration_fee;
-          eventValidated = true;
-          console.log(`✅ Authoritative fee validated from event base registration fee: ₹${finalAmount}`);
+        if (eventRecord) {
+          const event = transformDbEvent(eventRecord);
+          const formConfig = event.form_config || getDefaultFormConfig(event.category, event.registration_fee);
+          const partTypes = formConfig.participationTypes || [];
+
+          const targetTypeIdentifier = String(participationTypeId || compType || '').trim().toLowerCase();
+          const matchedType = partTypes.find(
+            (pt) =>
+              pt.isActive !== false &&
+              (String(pt.id).toLowerCase() === targetTypeIdentifier ||
+                pt.name.toLowerCase() === targetTypeIdentifier ||
+                pt.name.toLowerCase().includes(targetTypeIdentifier) ||
+                targetTypeIdentifier.includes(pt.name.toLowerCase()))
+          );
+
+          if (matchedType) {
+            finalAmount = matchedType.fee;
+            validated = true;
+            console.log(`✅ Authoritative fee validated from event participation type '${matchedType.name}': ₹${finalAmount}`);
+          } else if (typeof event.registration_fee === 'number') {
+            finalAmount = event.registration_fee;
+            validated = true;
+            console.log(`✅ Authoritative fee validated from event base fee: ₹${finalAmount}`);
+          }
         }
       }
     }
 
-    if (!eventValidated) {
+    if (!validated) {
       if (typeof amount === 'number' && amount >= 0) {
         finalAmount = amount;
-      } else if (items && Array.isArray(items) && items.length > 0) {
-        finalAmount = items.reduce((sum: number, item: any) => {
-          const itemPrice = item.sellingPrice ?? item.discountedPrice ?? item.price ?? 0;
-          return sum + (itemPrice * (item.quantity || 1));
-        }, 0);
+        validated = true;
+      } else {
+        console.error('❌ Could not validate authoritative fee for order creation.');
+        return NextResponse.json(
+          { success: false, error: "Event or pending registration record not found." },
+          { status: 400 }
+        );
       }
     }
 
-    // Validate final amount
     if (finalAmount < 0) {
-      console.error('❌ Invalid final amount:', finalAmount);
       return NextResponse.json(
-        { success: false, error: "Invalid final amount" },
+        { success: false, error: "Invalid payment amount" },
         { status: 400 }
       );
+    }
+
+    // Free Event Check
+    if (finalAmount === 0) {
+      return NextResponse.json({
+        success: true,
+        isFree: true,
+        id: `free_ord_${Date.now()}`,
+        orderId: `free_ord_${Date.now()}`,
+        amount: 0,
+        currency: 'INR',
+      });
     }
 
     // Get Razorpay credentials
     const key_id = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
-    
-    console.log('🔑 Razorpay credentials check:', {
-      hasKeyId: !!key_id,
-      hasKeySecret: !!key_secret,
-      keyIdPrefix: key_id ? key_id.substring(0, 8) : 'none'
-    });
     
     if (!key_id || !key_secret) {
       console.error('❌ Razorpay credentials missing');
@@ -113,47 +164,59 @@ export async function POST(req: Request) {
       );
     }
 
-    // Initialize Razorpay
-    const razorpay = new Razorpay({ 
-      key_id, 
-      key_secret 
-    });
-
+    const razorpay = new Razorpay({ key_id, key_secret });
     const amountInPaise = Math.round(finalAmount * 100);
 
-    // Create order
+    const orderReceipt = receipt || `rcpt_reg_${registrationId || Date.now()}`;
+
+    // Create Razorpay order with registrationId in notes
     const order = await razorpay.orders.create({
-      amount: amountInPaise, // Convert to paise
+      amount: amountInPaise,
       currency: 'INR',
-      receipt: receipt || `rcpt_${Date.now()}`,
+      receipt: orderReceipt,
       notes: {
-        customerName: customerName || '',
-        email: email || '',
-        phone: phone || '',
-        eventId: eventId || '',
-        compType: compType || ''
+        registrationId: registrationId || '',
+        customerName: customerName || registrationRecord?.participants?.full_name || '',
+        email: email || registrationRecord?.participants?.email || '',
+        phone: phone || registrationRecord?.participants?.phone || '',
+        eventId: eventId || registrationRecord?.event_id || '',
+        compType: compType || registrationRecord?.participation_type || '',
       }
     });
-    
-    console.log('✅ Razorpay order created successfully:', {
-      id: order.id,
+
+    console.log('✅ Razorpay order created successfully for registration:', {
+      orderId: order.id,
+      registrationId,
       amount: order.amount,
-      currency: order.currency,
     });
 
-    // Return the Razorpay order
+    // Record order association in DB
+    if (registrationId && supabase && isValidUUID(registrationId)) {
+      try {
+        await supabase.from('registration_payments').upsert({
+          registration_id: registrationId,
+          razorpay_order_id: order.id,
+          amount: finalAmount,
+          currency: 'INR',
+          status: 'created',
+          created_at: new Date().toISOString(),
+        }, { onConflict: 'razorpay_order_id' });
+      } catch (payInsErr) {
+        console.warn('Notice saving order to registration_payments:', payInsErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       id: order.id,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      keyId: key_id
+      keyId: key_id,
+      registrationId: registrationId || null,
     });
-    
   } catch (error: any) {
     console.error('❌ Create order error:', error);
-    
     return NextResponse.json(
       { 
         success: false,

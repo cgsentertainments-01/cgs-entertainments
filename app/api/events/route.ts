@@ -11,6 +11,8 @@ import { transformDbEvent } from "@/services/event.service";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 // Helper to find or create category ID in event_categories table
 async function getOrCreateCategoryId(categoryName: string): Promise<string | null> {
   if (!supabase) return null;
@@ -100,32 +102,85 @@ export async function GET(request: Request) {
     const uniqueRawEvents = Array.from(combinedMap.values());
     let allEventsList = uniqueRawEvents.map(transformDbEvent);
 
+function normalizeIdentifier(val?: string | null): string {
+  if (!val) return "";
+  let clean = String(val).trim();
+  while (
+    (clean.startsWith('"') && clean.endsWith('"')) ||
+    (clean.startsWith("'") && clean.endsWith("'"))
+  ) {
+    clean = clean.substring(1, clean.length - 1).trim();
+  }
+  return clean;
+}
+
+function isValidUUID(uuid?: string | null): boolean {
+  if (!uuid || typeof uuid !== "string") return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid.trim());
+}
+
     // Single lookup by slug or id
     if (slugParam) {
-      const found = allEventsList.find(
-        (e) =>
-          String(e.id).toLowerCase() === slugParam.toLowerCase() ||
-          String(e.slug).toLowerCase() === slugParam.toLowerCase()
-      );
-      if (found) {
-        return NextResponse.json({ event: found });
+      const cleanParam = normalizeIdentifier(slugParam);
+      const isUUID = isValidUUID(cleanParam);
+      const paramType = isUUID ? "UUID" : "slug";
+
+      console.log(`[API /api/events] Requested lookup parameter: "${slugParam}"`);
+      console.log(`[API /api/events] Normalized parameter: "${cleanParam}" | Type: ${paramType}`);
+
+      if (!cleanParam) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
       }
 
-      // Direct query by ID or Slug in Supabase if not in cache
+      // First, search loaded cache/store
+      const foundInCache = allEventsList.find((e) => {
+        if (isUUID) {
+          return String(e.id).toLowerCase() === cleanParam.toLowerCase();
+        } else {
+          return String(e.slug).toLowerCase() === cleanParam.toLowerCase();
+        }
+      });
+
+      if (foundInCache) {
+        console.log(`[API /api/events] Event FOUND in cache for ${paramType} "${cleanParam}": Title="${foundInCache.title}"`);
+        return NextResponse.json({ event: foundInCache });
+      }
+
+      // Direct query in Supabase if not found in memory store
       if (supabase) {
-        const { data: directEvt } = await supabase
-          .from("events")
-          .select("*, event_categories(name)")
-          .or(`id.eq.${slugParam},slug.eq.${slugParam}`)
-          .maybeSingle();
+        let query = supabase.from("events").select("*, event_categories(name)");
+        if (isUUID) {
+          console.log(`[API /api/events] Querying Supabase: events.select(*).eq('id', '${cleanParam}')`);
+          query = query.eq("id", cleanParam);
+        } else {
+          console.log(`[API /api/events] Querying Supabase: events.select(*).eq('slug', '${cleanParam}')`);
+          query = query.eq("slug", cleanParam);
+        }
+
+        let { data: directEvt, error: directErr } = await query.maybeSingle();
+
+        // Fallback query if category join fails
+        if (directErr) {
+          console.warn(`[API /api/events] Primary query returned notice: ${directErr.message}. Trying fallback query without category join.`);
+          let fallbackQuery = supabase.from("events").select("*");
+          if (isUUID) {
+            fallbackQuery = fallbackQuery.eq("id", cleanParam);
+          } else {
+            fallbackQuery = fallbackQuery.eq("slug", cleanParam);
+          }
+          const fbRes = await fallbackQuery.maybeSingle();
+          directEvt = fbRes.data;
+        }
 
         if (directEvt) {
+          console.log(`[API /api/events] Event FOUND in Supabase for ${paramType} "${cleanParam}": Title="${directEvt.title}"`);
           const transformed = transformDbEvent(directEvt);
           insertInStore(transformed as any);
           return NextResponse.json({ event: transformed });
         }
       }
 
+      console.log(`[API /api/events] Event NOT FOUND in DB for ${paramType}: "${cleanParam}"`);
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
@@ -357,6 +412,36 @@ export async function POST(request: Request) {
       is_published: is_published !== undefined ? Boolean(is_published) : true,
     };
 
+    const baseFormConfig = typeof form_config === "object" && form_config !== null ? { ...form_config } : {};
+    baseFormConfig.extra = {
+      schedule: schedule || [],
+      judges: judges || [],
+      contact_info: contact_info || {},
+      seo: seo || {},
+      homepage_settings: homepage_settings || {},
+      dance_styles: dance_styles || [],
+      dance_style,
+      dance_style_id,
+      participation_categories: participation_categories || [],
+      rules_regulations: rules_regulations || terms_conditions || "",
+      required_documents: required_documents || [],
+      min_age: min_age || 5,
+      max_age: max_age || 60,
+      registration_type: registration_type || "individual",
+      max_team_size: max_team_size || 10,
+      allow_multiple_categories: Boolean(allow_multiple_categories),
+      registration_form_type: registration_form_type || "standard",
+      payment_required: payment_required !== undefined ? Boolean(payment_required) : true,
+      currency: currency || "INR",
+      refund_policy: refund_policy || "",
+      event_start_time,
+      event_end_date,
+      event_end_time,
+      google_maps_url,
+      mobile_banner_image,
+      timezone,
+    };
+
     const payloadToInsert: any = {
       id: newEvent.id,
       title: newEvent.title,
@@ -379,9 +464,9 @@ export async function POST(request: Request) {
       is_featured: newEvent.is_featured,
       is_published: newEvent.is_published,
       terms_conditions: newEvent.terms_conditions,
+      form_config: baseFormConfig,
     };
 
-    if (form_config) payloadToInsert.form_config = form_config;
     if (resolvedCategoryId) payloadToInsert.category_id = resolvedCategoryId;
 
     // CRITICAL: Always perform INSERT (never UPSERT) for new event creation!

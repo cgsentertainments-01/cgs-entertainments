@@ -14,24 +14,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const isPhoto = docType.includes("photo");
-    const isAadhaar = docType.includes("aadhaar") || docType.includes("id_proof");
+    const fileType = file.type?.toLowerCase() || "";
+    const fileName = file.name?.toLowerCase() || "";
+    const isVideo = fileType.startsWith("video/") || docType.toLowerCase().includes("video");
+    const isPhoto = docType.includes("photo") && !isVideo;
+    const isAadhaar = (docType.includes("aadhaar") || docType.includes("id_proof")) && !isVideo;
 
     // File size validation
     const maxPhotoSize = 5 * 1024 * 1024; // 5 MB
     const maxAadhaarSize = 10 * 1024 * 1024; // 10 MB
-    const maxSize = isPhoto ? maxPhotoSize : maxAadhaarSize;
+    const maxVideoSize = 50 * 1024 * 1024; // 50 MB
+    const maxSize = isVideo ? maxVideoSize : isPhoto ? maxPhotoSize : maxAadhaarSize;
 
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: `File size exceeds the maximum limit of ${isPhoto ? "5 MB" : "10 MB"}.` },
+        { error: `File size exceeds the maximum limit of ${isVideo ? "50 MB" : isPhoto ? "5 MB" : "10 MB"}.` },
         { status: 400 }
       );
     }
-
-    // File type validation
-    const fileType = file.type?.toLowerCase() || "";
-    const fileName = file.name?.toLowerCase() || "";
 
     if (isPhoto) {
       const allowedPhotoTypes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
@@ -60,11 +60,13 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
 
     // Try Supabase Storage upload first
-    let bucketName = isPhoto ? "participant-photos" : "participant-documents";
+    let bucketName = isVideo ? "dance-videos" : isPhoto ? "participant-photos" : "participant-documents";
     const timeStamp = Date.now();
     const uniqueId = Math.random().toString(36).substring(2, 9);
     const sanitizedOriginalName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const filePath = `${isPhoto ? "photos" : "docs"}/${timeStamp}_${uniqueId}_${sanitizedOriginalName}`;
+    const filePath = isVideo
+      ? `videos/${timeStamp}_${uniqueId}_${sanitizedOriginalName}`
+      : `${isPhoto ? "photos" : "docs"}/${timeStamp}_${uniqueId}_${sanitizedOriginalName}`;
 
     if (supabase) {
       // Attempt upload to primary bucket

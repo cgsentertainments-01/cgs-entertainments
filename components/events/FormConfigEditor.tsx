@@ -50,12 +50,13 @@ export function FormConfigEditor({
   // ───────────────────────────────────────────────────────────────────────────
   const addParticipationType = () => {
     const nextOrder = (formConfig.participationTypes || []).length + 1;
+    const defaultFee = (formConfig.participationTypes || [])[0]?.fee || 0;
     const newType: ParticipationTypeConfig = {
       id: `type_${Date.now()}`,
       name: "New Participation Option",
       minParticipants: 1,
       maxParticipants: 1,
-      fee: 500,
+      fee: defaultFee,
       isActive: true,
       order: nextOrder,
     };
@@ -348,7 +349,7 @@ export function FormConfigEditor({
               color: "#334155",
             }}
           >
-            <strong>Note on Fee Logic:</strong> Registration fees are determined dynamically per participation type (e.g. Solo ₹500, Duo ₹800, Trio ₹1,000, Group ₹2,000). You can add, edit, or deactivate options below.
+            <strong>Note on Fee Logic:</strong> Registration fees are determined dynamically per participation type based on admin configuration. You can add, edit, or deactivate options below.
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

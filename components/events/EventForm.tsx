@@ -103,7 +103,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
 
   // Section 5: Event Registration Settings
   const [regRequired, setRegRequired] = useState(true);
-  const [regFee, setRegFee] = useState<number>(500);
+  const [regFee, setRegFee] = useState<number>(0);
   const [maxParticipants, setMaxParticipants] = useState<number>(500);
   const [minAge, setMinAge] = useState<number>(5);
   const [maxAge, setMaxAge] = useState<number>(60);
@@ -228,7 +228,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     if (evt.form_config) {
       setFormConfig(evt.form_config);
     } else {
-      setFormConfig(getDefaultFormConfig(evt.category || "Dance"));
+      setFormConfig(getDefaultFormConfig(evt.category || "Dance", fee));
     }
   };
 
@@ -406,8 +406,9 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         if (res.success) {
           setSuccessMsg("Event updated successfully!");
           setTimeout(() => {
+            router.refresh();
             router.push("/admin/events");
-          }, 1000);
+          }, 800);
         } else {
           setErrorMsg(res.error || "Unable to update event. The event could not be saved. Please try again.");
           setIsSubmitting(false);
@@ -418,8 +419,9 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         if (res.success) {
           setSuccessMsg("New event created successfully!");
           setTimeout(() => {
+            router.refresh();
             router.push("/admin/events");
-          }, 1000);
+          }, 800);
         } else {
           setErrorMsg(res.error || "Failed to create event.");
           setIsSubmitting(false);

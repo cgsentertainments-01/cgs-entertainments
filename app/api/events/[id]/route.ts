@@ -4,6 +4,8 @@ import { verifyAdminApi } from "@/lib/supabase/server";
 import { upsertInStore, deleteFromStore, revalidateEventCaches, DBEvent } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
 
+export const dynamic = "force-dynamic";
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function isValidUUID(uuid: string) {
@@ -137,6 +139,18 @@ export async function PUT(
       category_id,
       dance_style,
       dance_style_id,
+      dance_styles,
+      participation_categories,
+      required_documents,
+      min_age,
+      max_age,
+      registration_type,
+      max_team_size,
+      allow_multiple_categories,
+      registration_form_type,
+      payment_required,
+      currency,
+      refund_policy,
       event_date,
       date,
       event_start_time,
@@ -242,25 +256,59 @@ function normalizeStatus(value: unknown): string {
     const categoryId =
       category_id || (await getOrCreateCategoryId(supabase, category || "Dance"));
 
+    // Prepare extended form_config to preserve all event metadata in JSONB
+    const baseFormConfig = typeof form_config === "object" && form_config !== null ? { ...form_config } : {};
+    const existingExtra = baseFormConfig.extra || {};
+    baseFormConfig.extra = {
+      ...existingExtra,
+      schedule: schedule !== undefined ? schedule : existingExtra.schedule,
+      judges: judges !== undefined ? judges : existingExtra.judges,
+      contact_info: contact_info !== undefined ? contact_info : existingExtra.contact_info,
+      seo: seo !== undefined ? seo : existingExtra.seo,
+      homepage_settings: homepage_settings !== undefined ? homepage_settings : existingExtra.homepage_settings,
+      dance_styles: dance_styles !== undefined ? dance_styles : existingExtra.dance_styles,
+      dance_style: dance_style !== undefined ? dance_style : existingExtra.dance_style,
+      dance_style_id: dance_style_id !== undefined ? dance_style_id : existingExtra.dance_style_id,
+      participation_categories: participation_categories !== undefined ? participation_categories : existingExtra.participation_categories,
+      rules_regulations: rules_regulations !== undefined ? rules_regulations : existingExtra.rules_regulations,
+      required_documents: required_documents !== undefined ? required_documents : existingExtra.required_documents,
+      min_age: min_age !== undefined ? min_age : existingExtra.min_age,
+      max_age: max_age !== undefined ? max_age : existingExtra.max_age,
+      registration_type: registration_type !== undefined ? registration_type : existingExtra.registration_type,
+      max_team_size: max_team_size !== undefined ? max_team_size : existingExtra.max_team_size,
+      allow_multiple_categories: allow_multiple_categories !== undefined ? allow_multiple_categories : existingExtra.allow_multiple_categories,
+      registration_form_type: registration_form_type !== undefined ? registration_form_type : existingExtra.registration_form_type,
+      payment_required: payment_required !== undefined ? payment_required : existingExtra.payment_required,
+      currency: currency !== undefined ? currency : existingExtra.currency,
+      refund_policy: refund_policy !== undefined ? refund_policy : existingExtra.refund_policy,
+      event_start_time: event_start_time !== undefined ? event_start_time : existingExtra.event_start_time,
+      event_end_date: event_end_date !== undefined ? event_end_date : existingExtra.event_end_date,
+      event_end_time: event_end_time !== undefined ? event_end_time : existingExtra.event_end_time,
+      google_maps_url: google_maps_url !== undefined ? google_maps_url : existingExtra.google_maps_url,
+      mobile_banner_image: mobile_banner_image !== undefined ? mobile_banner_image : existingExtra.mobile_banner_image,
+      timezone: timezone !== undefined ? timezone : existingExtra.timezone,
+    };
+
     // 7. Build the update payload using explicit column mappings and sanitized types
     const updatePayload: Record<string, unknown> = {
       status: normalizeStatus(status),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
       updated_at: new Date().toISOString(),
+      form_config: baseFormConfig,
     };
 
-    if (title) updatePayload.title = title;
-    if (newSlug) updatePayload.slug = newSlug;
+    if (title !== undefined) updatePayload.title = title;
+    if (newSlug !== undefined) updatePayload.slug = newSlug;
     if (short_description !== undefined) updatePayload.short_description = short_description;
     if (description !== undefined) updatePayload.description = description;
     if (categoryId) updatePayload.category_id = categoryId;
     if (address !== undefined) updatePayload.address = address;
-    if (venue) updatePayload.venue = venue;
-    if (city) updatePayload.city = city;
-    if (state) updatePayload.state = state;
-    if (pincode) updatePayload.pincode = pincode;
+    if (venue !== undefined) updatePayload.venue = venue;
+    if (city !== undefined) updatePayload.city = city;
+    if (state !== undefined) updatePayload.state = state;
+    if (pincode !== undefined) updatePayload.pincode = pincode;
     if (registration_fee !== undefined || price !== undefined) updatePayload.registration_fee = feeNum;
-    if (max_participants !== undefined || maxSeats !== undefined) updatePayload.max_participants = max_participants || maxSeats;
+    if (max_participants !== undefined || maxSeats !== undefined) updatePayload.max_participants = Number(max_participants || maxSeats) || 500;
 
     const normEventDate = normalizeTimestamp(event_date || date);
     if (normEventDate) {
@@ -270,19 +318,18 @@ function normalizeStatus(value: unknown): string {
     updatePayload.registration_start_date = normalizeTimestamp(registration_start_date);
     updatePayload.registration_deadline = normalizeTimestamp(registration_deadline);
 
-    if (form_config !== undefined) updatePayload.form_config = form_config;
-
     const bannerImg = banner_image || img;
-    if (bannerImg) updatePayload.banner_image = bannerImg;
-    if (thumbnail_image || bannerImg)
+    if (bannerImg !== undefined) updatePayload.banner_image = bannerImg;
+    if (thumbnail_image !== undefined || bannerImg !== undefined)
       updatePayload.thumbnail_image = thumbnail_image || bannerImg;
 
     if (is_featured !== undefined)
       updatePayload.is_featured = Boolean(is_featured);
-    if (terms_conditions || rules_regulations)
-      updatePayload.terms_conditions = terms_conditions || rules_regulations;
+    if (terms_conditions !== undefined || rules_regulations !== undefined)
+      updatePayload.terms_conditions = terms_conditions || rules_regulations || "";
 
-    console.log(`[PUT /api/events/${eventUUID}] Update payload:`, updatePayload);
+    console.log(`[PUT /api/events/${eventUUID}] Target Event UUID: ${eventUUID}`);
+    console.log(`[PUT /api/events/${eventUUID}] Update payload:`, JSON.stringify(updatePayload));
 
     // 8. Execute UPDATE — target exactly the resolved UUID, confirm row returned
     const { data: updatedRow, error: sbErr } = await supabase
@@ -306,57 +353,19 @@ function normalizeStatus(value: unknown): string {
     if (!updatedRow) {
       return NextResponse.json(
         { error: "Event update returned no data — the row may not exist." },
-        { status: 500 }
+        { status: 404 }
       );
     }
 
     // 9. Sync in-memory store and revalidate Next.js cache
-    const storeItem: DBEvent = {
-      id: updatedRow.id,
-      title: updatedRow.title,
-      slug: updatedRow.slug,
-      short_description: updatedRow.short_description,
-      description: updatedRow.description,
-      category_id: updatedRow.category_id,
-      category_name: category,
-      dance_style_id,
-      dance_style_name: dance_style,
-      event_date: updatedRow.event_date,
-      event_start_time,
-      event_end_date,
-      event_end_time,
-      registration_start_date: updatedRow.registration_start_date,
-      registration_deadline: updatedRow.registration_deadline,
-      timezone,
-      venue: updatedRow.venue,
-      address: updatedRow.address,
-      city: updatedRow.city,
-      state: updatedRow.state,
-      pincode: updatedRow.pincode,
-      google_maps_url: updatedRow.google_maps_url,
-      banner_image: updatedRow.banner_image,
-      mobile_banner_image: updatedRow.mobile_banner_image,
-      thumbnail_image: updatedRow.thumbnail_image,
-      img: updatedRow.banner_image,
-      registration_fee: updatedRow.registration_fee,
-      max_participants: updatedRow.max_participants,
-      status: updatedRow.status,
-      is_featured: updatedRow.is_featured,
-      is_published: updatedRow.is_published,
-      terms_conditions: updatedRow.terms_conditions,
-      schedule: schedule || [],
-      judges: judges || [],
-      contact_info: contact_info || {},
-      seo: seo || {},
-      homepage_settings: homepage_settings || {},
-    };
-
-    upsertInStore(storeItem);
+    const transformedObj = transformDbEvent({ ...updatedRow, category_name: category });
+    upsertInStore(transformedObj as any);
     revalidateEventCaches(updatedRow.id, updatedRow.slug);
 
     return NextResponse.json({
       success: true,
-      updated: transformDbEvent({ ...updatedRow, category_name: category }),
+      updated: transformedObj,
+      id: updatedRow.id,
     });
   } catch (err: any) {
     console.error("PUT /api/events/[id] exception:", err);

@@ -50,6 +50,7 @@ interface EventParticipantItem {
   registration_status?: string;
   payment_status?: string;
   registration_amount?: number;
+  video_path?: string | null;
   video_url?: string | null;
   video_signed_url?: string | null;
   created_at?: string;
@@ -497,7 +498,7 @@ export default function AdminEventParticipantsPage({
             </thead>
             <tbody>
               {filteredParticipants.map((p) => {
-                const videoTarget = p.video_signed_url || p.video_url;
+                const videoTarget = p.video_signed_url || p.video_url || p.video_path;
 
                 return (
                   <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9" }}>

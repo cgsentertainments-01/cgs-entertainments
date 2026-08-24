@@ -127,9 +127,7 @@ export function transformDbEvent(evt: any): EventItem {
     evt.location ||
     (evt.venue && evt.city ? `${evt.venue}, ${evt.city}` : evt.city || evt.venue || "Hyderabad");
 
-  const rulesText = evt.rules_regulations || evt.rules || evt.terms_conditions || "";
-
-  let parsedFormConfig: EventFormConfig | undefined = undefined;
+  let parsedFormConfig: any = undefined;
   if (evt.form_config) {
     if (typeof evt.form_config === "string") {
       try {
@@ -141,9 +139,15 @@ export function transformDbEvent(evt: any): EventItem {
       parsedFormConfig = evt.form_config;
     }
   }
+
+  const extra = (parsedFormConfig && parsedFormConfig.extra) ? parsedFormConfig.extra : {};
+
   if (!parsedFormConfig || !parsedFormConfig.participationTypes || parsedFormConfig.participationTypes.length === 0) {
-    parsedFormConfig = getDefaultFormConfig(categoryName);
+    const defaultCfg = getDefaultFormConfig(categoryName, feeNum);
+    parsedFormConfig = parsedFormConfig ? { ...defaultCfg, ...parsedFormConfig } : defaultCfg;
   }
+
+  const rulesText = evt.rules_regulations || extra.rules_regulations || evt.rules || evt.terms_conditions || "";
 
   return {
     id: String(evt.id),
@@ -153,30 +157,30 @@ export function transformDbEvent(evt: any): EventItem {
     description: evt.description || evt.short_description || "",
     category: categoryName,
     category_id: evt.category_id || "",
-    dance_style: evt.dance_style || evt.dance_style_name || "",
-    dance_style_id: evt.dance_style_id || "",
+    dance_style: evt.dance_style || evt.dance_style_name || extra.dance_style || "",
+    dance_style_id: evt.dance_style_id || extra.dance_style_id || "",
     badge,
     badgeBg,
     date: formattedDate,
     rawDate: rawDate,
     event_date: rawDate,
-    event_start_time: evt.event_start_time || "10:00 AM",
-    event_end_date: evt.event_end_date || "",
-    event_end_time: evt.event_end_time || "08:00 PM",
+    event_start_time: evt.event_start_time || extra.event_start_time || "10:00 AM",
+    event_end_date: evt.event_end_date || extra.event_end_date || "",
+    event_end_time: evt.event_end_time || extra.event_end_time || "08:00 PM",
     registration_start_date: evt.registration_start_date || "",
     registration_deadline: evt.registration_deadline || "",
-    timezone: evt.timezone || "Asia/Kolkata (IST)",
+    timezone: evt.timezone || extra.timezone || "Asia/Kolkata (IST)",
     location: loc,
     venue: evt.venue || evt.city || "Venue TBA",
     address: evt.address || "",
     city: evt.city || "Hyderabad",
     state: evt.state || "Telangana",
     pincode: evt.pincode || "500001",
-    google_maps_url: evt.google_maps_url || "",
+    google_maps_url: evt.google_maps_url || extra.google_maps_url || "",
     img: rawImg,
     banner_url: rawImg,
     banner_image: rawImg,
-    mobile_banner_image: evt.mobile_banner_image || rawImg,
+    mobile_banner_image: evt.mobile_banner_image || extra.mobile_banner_image || rawImg,
     thumbnail_image: evt.thumbnail_image || rawImg,
     registration_required: evt.registration_required !== undefined ? Boolean(evt.registration_required) : true,
     registrationFee: feeNum,
@@ -185,27 +189,27 @@ export function transformDbEvent(evt: any): EventItem {
     max_participants: evt.max_participants || evt.maxSeats || 500,
     current_participants: evt.current_participants || evt.participantsCount || 0,
     participantsCount: evt.current_participants || evt.participantsCount || 0,
-    min_age: evt.min_age || 5,
-    max_age: evt.max_age || 60,
-    registration_type: evt.registration_type || "individual",
-    max_team_size: evt.max_team_size || 10,
-    allow_multiple_categories: Boolean(evt.allow_multiple_categories),
-    registration_form_type: evt.registration_form_type || "standard",
-    participation_categories: evt.participation_categories || ["Solo", "Duo", "Group"],
-    dance_styles: evt.dance_styles || ["Classical", "Hip Hop", "Western"],
+    min_age: evt.min_age !== undefined ? evt.min_age : (extra.min_age !== undefined ? extra.min_age : 5),
+    max_age: evt.max_age !== undefined ? evt.max_age : (extra.max_age !== undefined ? extra.max_age : 60),
+    registration_type: evt.registration_type || extra.registration_type || "individual",
+    max_team_size: evt.max_team_size !== undefined ? evt.max_team_size : (extra.max_team_size !== undefined ? extra.max_team_size : 10),
+    allow_multiple_categories: evt.allow_multiple_categories !== undefined ? Boolean(evt.allow_multiple_categories) : Boolean(extra.allow_multiple_categories),
+    registration_form_type: evt.registration_form_type || extra.registration_form_type || "standard",
+    participation_categories: evt.participation_categories || extra.participation_categories || ["Solo", "Duo", "Group"],
+    dance_styles: evt.dance_styles || extra.dance_styles || ["Classical", "Hip Hop", "Western"],
     rules_regulations: rulesText,
     rules: rulesText,
     terms_conditions: evt.terms_conditions || rulesText,
-    required_documents: evt.required_documents || ["Profile Photo", "ID Proof", "Dance Video"],
-    payment_required: evt.payment_required !== undefined ? Boolean(evt.payment_required) : true,
-    currency: evt.currency || "INR",
-    refund_policy: evt.refund_policy || "Registration fee is non-refundable.",
-    payment_deadline: evt.payment_deadline || "",
-    schedule: evt.schedule || [],
-    judges: evt.judges || [],
-    contact_info: evt.contact_info || { name: "CGS Event Team", phone: "+91 98765 43210", email: "cgsentertainments01@gmail.com" },
-    seo: evt.seo || { title: evt.title, description: evt.short_description || evt.title },
-    homepage_settings: evt.homepage_settings || { show_on_homepage: true, is_featured: Boolean(evt.is_featured) },
+    required_documents: evt.required_documents || extra.required_documents || ["Profile Photo", "ID Proof", "Dance Video"],
+    payment_required: evt.payment_required !== undefined ? Boolean(evt.payment_required) : (extra.payment_required !== undefined ? Boolean(extra.payment_required) : true),
+    currency: evt.currency || extra.currency || "INR",
+    refund_policy: evt.refund_policy || extra.refund_policy || "Registration fee is non-refundable.",
+    payment_deadline: evt.payment_deadline || extra.payment_deadline || "",
+    schedule: evt.schedule || extra.schedule || [],
+    judges: evt.judges || extra.judges || [],
+    contact_info: evt.contact_info || extra.contact_info || { name: "CGS Event Team", phone: "+91 98765 43210", email: "cgsentertainments01@gmail.com" },
+    seo: evt.seo || extra.seo || { title: evt.title, description: evt.short_description || evt.title },
+    homepage_settings: evt.homepage_settings || extra.homepage_settings || { show_on_homepage: true, is_featured: Boolean(evt.is_featured) },
     form_config: parsedFormConfig,
     status: evt.status || "registration_open",
     is_featured: Boolean(evt.is_featured),
@@ -255,10 +259,37 @@ export async function getAllEvents(): Promise<EventItem[]> {
   return [];
 }
 
+/**
+ * Normalizes an event identifier parameter by trimming whitespace
+ * and removing surrounding single/double quotes.
+ */
+export function normalizeEventIdentifier(input?: string | null): string {
+  if (!input) return "";
+  let clean = String(input).trim();
+  while (
+    (clean.startsWith('"') && clean.endsWith('"')) ||
+    (clean.startsWith("'") && clean.endsWith("'"))
+  ) {
+    clean = clean.substring(1, clean.length - 1).trim();
+  }
+  return clean;
+}
+
+/**
+ * Checks if a string is a valid UUID (v1-v5).
+ */
+export function isValidUUID(uuid?: string | null): boolean {
+  if (!uuid || typeof uuid !== "string") return false;
+  const clean = uuid.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
+}
+
 export async function getEventByIdOrSlug(identifier: string): Promise<EventItem | null> {
-  if (!identifier) return null;
+  const cleanParam = normalizeEventIdentifier(identifier);
+  if (!cleanParam) return null;
   try {
-    const res = await fetch(`/api/events?slug=${encodeURIComponent(identifier)}`, { cache: "no-store" });
+    console.log(`[SERVICE] getEventByIdOrSlug raw="${identifier}" -> clean="${cleanParam}" (isUUID: ${isValidUUID(cleanParam)})`);
+    const res = await fetch(`/api/events?slug=${encodeURIComponent(cleanParam)}`, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       if (data.event) return transformDbEvent(data.event);

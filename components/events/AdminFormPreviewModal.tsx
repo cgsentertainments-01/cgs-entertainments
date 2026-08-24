@@ -50,7 +50,7 @@ export function AdminFormPreviewModal({
       name: "Solo",
       minParticipants: 1,
       maxParticipants: 1,
-      fee: 500,
+      fee: 0,
     };
 
   const [numParticipants, setNumParticipants] = useState<number>(
@@ -308,6 +308,60 @@ export function AdminFormPreviewModal({
                   );
                 })}
               </div>
+
+              {isMultiParticipant && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    background: "#F8FAFC",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: 14,
+                    padding: 16,
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 10px", color: "#1E293B", fontSize: 14, fontWeight: 800 }}>
+                    Group / Team Details ({currentType.name})
+                  </h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
+                        Team Name *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Royal Dancers"
+                        disabled
+                        style={{
+                          width: "100%",
+                          padding: 10,
+                          borderRadius: 8,
+                          border: "1px solid #CBD5E1",
+                          background: "#fff",
+                          fontSize: 13,
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
+                        Team Leader Name (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leader Full Name"
+                        disabled
+                        style={{
+                          width: "100%",
+                          padding: 10,
+                          borderRadius: 8,
+                          border: "1px solid #CBD5E1",
+                          background: "#fff",
+                          fontSize: 13,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

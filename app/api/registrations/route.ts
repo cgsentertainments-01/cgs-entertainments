@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getStoreEvents } from "@/lib/events-store";
-import { transformDbEvent } from "@/services/event.service";
+import { transformDbEvent, normalizeEventIdentifier, isValidUUID } from "@/services/event.service";
 import { getDefaultFormConfig } from "@/types/event-config";
 
 function normalizeGender(g?: string | null): string | null {
@@ -14,14 +14,8 @@ function normalizeGender(g?: string | null): string | null {
   return null;
 }
 
-// Helper to validate UUIDs
-function isValidUUID(uuid: string) {
-  if (!uuid || typeof uuid !== "string") return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
-}
-
 export async function POST(request: Request) {
-  console.log("[REGISTRATION] DATABASE INSERT START");
+  console.log("[REGISTRATION] API POST START (PRE-PAYMENT PENDING / CONFIRMED PIPELINE)");
   const supabase = getSupabaseAdmin();
 
   try {
@@ -48,6 +42,13 @@ export async function POST(request: Request) {
       razorpaySignature,
       paymentStatus,
       registrationStatus,
+      // Structured Fields
+      participationTypeId,
+      participationType: participationTypeBody,
+      teamInfo,
+      customFields: customFieldsBody,
+      documentUrls: documentUrlsBody,
+      additionalParticipants: additionalParticipantsBody,
     } = body;
 
     const rzpPayId = razorpayPaymentId || paymentDetails?.paymentId || paymentDetails?.razorpay_payment_id || null;
@@ -59,26 +60,21 @@ export async function POST(request: Request) {
       String(rzpPayId || "").startsWith("pay_mock_") ||
       rzpSig === "mock_signature"
     ) {
-      console.error("[REGISTRATION] DATABASE INSERT REJECTED: Mock payment detected", { rzpOrderId, rzpPayId });
+      console.error("[REGISTRATION] DATABASE REJECTED: Mock payment detected", { rzpOrderId, rzpPayId });
       return NextResponse.json(
         { success: false, error: "Mock payments are strictly prohibited." },
         { status: 400 }
       );
     }
 
-    const isPaid = paymentStatus === "paid" || !!rzpPayId;
-
-    const finalVideoUrl = videoUrl || videoPath || participantData?.videoUrl || participantData?.videoPath || null;
-    const finalPhotoUrl = photoUrl || photoPath || participantData?.photoUrl || participantData?.photoPath || participantData?.profile_photo || null;
-    const finalAadhaarUrl = aadhaarUrl || aadhaarPath || participantData?.aadhaarUrl || participantData?.aadhaarPath || null;
-
-    if (!eventId) {
-      console.error("[REGISTRATION] DATABASE INSERT FAILED: Missing eventId");
+    const cleanEventId = normalizeEventIdentifier(eventId);
+    if (!cleanEventId) {
+      console.error("[REGISTRATION] FAILED: Missing eventId");
       return NextResponse.json({ success: false, error: "Missing required field: eventId (Event ID or Slug is required)." }, { status: 400 });
     }
 
     if (!participantData || !participantData.email || !participantData.fullName || !participantData.phone) {
-      console.error("[REGISTRATION] DATABASE INSERT FAILED: Missing participant fields");
+      console.error("[REGISTRATION] FAILED: Missing participant fields");
       return NextResponse.json(
         { success: false, error: "Missing required participant fields: fullName, email, and phone are required." },
         { status: 400 }
@@ -92,52 +88,50 @@ export async function POST(request: Request) {
     // 1. FETCH AUTHORITATIVE EVENT FROM SUPABASE OR STORE
     // -------------------------------------------------------------------------
     let eventRecord: any = null;
+    const isUUID = isValidUUID(cleanEventId);
+    const eventParamType = isUUID ? "UUID" : "slug";
 
-    if (supabase) {
+    console.log(`[REGISTRATION] Requested event parameter: "${eventId}" -> clean: "${cleanEventId}" (${eventParamType})`);
+
+    if (supabase && cleanEventId) {
       try {
         let query = supabase.from("events").select("*");
-        if (isValidUUID(eventId)) {
-          query = query.or(`id.eq.${eventId},slug.eq.${eventId}`);
+        if (isUUID) {
+          query = query.eq("id", cleanEventId);
         } else {
-          query = query.eq("slug", eventId);
+          query = query.eq("slug", cleanEventId);
         }
         const { data, error } = await query.maybeSingle();
-
         if (error) {
-          console.warn("Supabase event fetch warning:", error.message);
+          console.warn("Supabase event fetch notice in registration:", error.message);
         }
         if (data) {
           eventRecord = data;
         }
       } catch (err: any) {
-        console.warn("Exception querying events table:", err.message);
+        console.warn("Exception querying events table in registration:", err.message);
       }
     }
 
-    // Fallback to memory store if DB record not found or seed event
-    if (!eventRecord) {
+    if (!eventRecord && cleanEventId) {
       const storeEvents = getStoreEvents();
       eventRecord = storeEvents.find(
-        (e) => String(e.id) === String(eventId) || e.slug === eventId
+        (e) => String(e.id).toLowerCase() === cleanEventId.toLowerCase() || (e.slug && e.slug.toLowerCase() === cleanEventId.toLowerCase())
       );
     }
 
     if (!eventRecord) {
-      console.error(`[REGISTRATION] DATABASE INSERT FAILED: Event not found for '${eventId}'`);
-      return NextResponse.json({ success: false, error: `Event not found for ID/Slug: '${eventId}'` }, { status: 404 });
+      console.error(`[REGISTRATION] FAILED: Event not found for ${eventParamType} '${cleanEventId}'`);
+      return NextResponse.json({ success: false, error: `Event not found for ID/Slug: '${cleanEventId}'` }, { status: 404 });
     }
 
     const event = transformDbEvent(eventRecord);
 
     // -------------------------------------------------------------------------
-    // 2. SERVER-SIDE EVENT VALIDATION
+    // 2. SERVER-SIDE EVENT & FORM VALIDATION
     // -------------------------------------------------------------------------
     if (!event.is_published) {
-      console.error("[REGISTRATION] DATABASE INSERT FAILED: Event unavailable");
-      return NextResponse.json(
-        { success: false, error: "This event is currently unavailable for registration." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "This event is currently unavailable for registration." }, { status: 400 });
     }
 
     const currentStatus = String(event.status || "").toLowerCase();
@@ -147,7 +141,6 @@ export async function POST(request: Request) {
       currentStatus === "draft" ||
       currentStatus === "completed"
     ) {
-      console.error(`[REGISTRATION] DATABASE INSERT FAILED: Event registration closed (Status: ${event.status})`);
       return NextResponse.json(
         { success: false, error: `Registration for this event is closed (Status: ${event.status}).` },
         { status: 400 }
@@ -157,11 +150,7 @@ export async function POST(request: Request) {
     if (event.registration_deadline) {
       const deadlineDate = new Date(event.registration_deadline);
       if (!isNaN(deadlineDate.getTime()) && new Date() > deadlineDate) {
-        console.error("[REGISTRATION] DATABASE INSERT FAILED: Registration deadline passed");
-        return NextResponse.json(
-          { success: false, error: "The registration deadline for this event has passed." },
-          { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: "The registration deadline for this event has passed." }, { status: 400 });
       }
     }
 
@@ -170,14 +159,10 @@ export async function POST(request: Request) {
       event.current_participants !== undefined &&
       event.current_participants >= event.max_participants
     ) {
-      console.error("[REGISTRATION] DATABASE INSERT FAILED: Maximum participant capacity reached");
-      return NextResponse.json(
-        { success: false, error: "This event has reached maximum participant capacity." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "This event has reached maximum participant capacity." }, { status: 400 });
     }
 
-    // Authoritative Amount Calculation based on Event Form Configuration
+    // Resolve Participation Type & Fee
     let parsedNotes: any = {};
     if (typeof notes === "string") {
       try { parsedNotes = JSON.parse(notes); } catch (e) {}
@@ -186,30 +171,122 @@ export async function POST(request: Request) {
     }
 
     const count = Math.max(1, parseInt(String(numParticipants), 10) || 1);
-    const selectedParticipationIdentifier = String(body.participationTypeId || parsedNotes.compType || compType || category || "").trim().toLowerCase();
-    const formConfig = event.form_config || getDefaultFormConfig(event.category);
+    const selectedTypeIdentifier = String(
+      participationTypeId || participationTypeBody || parsedNotes.compType || compType || category || ""
+    ).trim().toLowerCase();
+
+    const formConfig = event.form_config || getDefaultFormConfig(event.category, event.registration_fee);
     const partTypes = formConfig.participationTypes || [];
 
     const matchedType = partTypes.find(
       (pt: any) =>
         pt.isActive !== false &&
-        (String(pt.id).toLowerCase() === selectedParticipationIdentifier ||
-          pt.name.toLowerCase() === selectedParticipationIdentifier ||
-          pt.name.toLowerCase().includes(selectedParticipationIdentifier) ||
-          selectedParticipationIdentifier.includes(pt.name.toLowerCase()))
+        (String(pt.id).toLowerCase() === selectedTypeIdentifier ||
+          pt.name.toLowerCase() === selectedTypeIdentifier ||
+          pt.name.toLowerCase().includes(selectedTypeIdentifier) ||
+          selectedTypeIdentifier.includes(pt.name.toLowerCase()))
     );
 
+    const resolvedParticipationType = matchedType ? matchedType.name : compType || "Solo";
+
     let totalAmount = 0;
-    if (matchedType) {
+    if (matchedType && typeof matchedType.fee === "number") {
       totalAmount = matchedType.fee;
     } else {
       const feeRaw = typeof event.registration_fee === "number"
         ? event.registration_fee
-        : typeof event.registrationFee === "number"
-          ? event.registrationFee
-          : parseFloat(String(event.registration_fee || event.registrationFee || (event as any).price || "0").replace(/[^0-9.]/g, "")) || 0;
+        : parseFloat(String(event.registration_fee || (event as any).price || "0").replace(/[^0-9.]/g, "")) || 0;
       totalAmount = isNaN(feeRaw) || feeRaw < 0 ? 0 : feeRaw;
     }
+
+    // Multi-participant & Team validation
+    const isMultiParticipant = matchedType
+      ? ((matchedType.maxParticipants || 1) > 1 || (matchedType.minParticipants || 1) > 1)
+      : count > 1;
+
+    const extractedTeamName =
+      teamInfo?.teamName ||
+      body.teamName ||
+      parsedNotes?.teamInfo?.teamName;
+
+    const extractedTeamLeader =
+      teamInfo?.teamLeader ||
+      body.teamLeader ||
+      parsedNotes?.teamInfo?.teamLeader;
+
+    const extractedTeamContact =
+      teamInfo?.teamContact ||
+      body.teamContact ||
+      parsedNotes?.teamInfo?.teamContact;
+
+    if (isMultiParticipant && (!extractedTeamName || !String(extractedTeamName).trim())) {
+      return NextResponse.json(
+        { success: false, error: `Team Name is required for ${resolvedParticipationType} registration.` },
+        { status: 400 }
+      );
+    }
+
+    // Validate Required Custom Fields
+    const customFieldsObj = customFieldsBody || parsedNotes?.customFields || {};
+    const requiredCustom = (formConfig.customFields || []).filter((cf: any) => cf.required);
+    for (const cf of requiredCustom) {
+      if (!customFieldsObj[cf.id] || !String(customFieldsObj[cf.id]).trim()) {
+        return NextResponse.json(
+          { success: false, error: `Required field missing: '${cf.label}'.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Document URLs object & robust Video URL resolution
+    const docUrlsObj = documentUrlsBody || parsedNotes?.docUrls || {};
+
+    const videoFromDocs =
+      docUrlsObj.danceVideo ||
+      docUrlsObj.dance_video ||
+      docUrlsObj.performanceVideo ||
+      docUrlsObj.video ||
+      docUrlsObj.danceAuditionVideo ||
+      (typeof docUrlsObj === "object" && docUrlsObj !== null
+        ? Object.entries(docUrlsObj).find(([k, v]) => k.toLowerCase().includes("video") || String(v).includes("videos/"))?.[1]
+        : null);
+
+    const finalPhotoUrl = photoUrl || photoPath || participantData?.photoUrl || participantData?.photoPath || participantData?.profile_photo || null;
+    const finalVideoUrl =
+      videoUrl ||
+      videoPath ||
+      participantData?.videoUrl ||
+      participantData?.videoPath ||
+      parsedNotes?.videoUrl ||
+      parsedNotes?.videoPath ||
+      videoFromDocs ||
+      null;
+    const finalAadhaarUrl = aadhaarUrl || aadhaarPath || participantData?.aadhaarUrl || participantData?.aadhaarPath || null;
+
+    if (finalPhotoUrl) docUrlsObj.photo = finalPhotoUrl;
+    if (finalVideoUrl) {
+      docUrlsObj.danceVideo = finalVideoUrl;
+      docUrlsObj.video = finalVideoUrl;
+    }
+    if (finalAadhaarUrl) docUrlsObj.idProof = finalAadhaarUrl;
+
+    const additionalPartsArr = additionalParticipantsBody || body.additionalParticipants || parsedNotes?.additionalParticipants || [];
+
+    // Complete fallback notes object ensuring all dynamic values are preserved even if custom table columns are missing in PostgREST cache
+    const fallbackNotesObj = {
+      participationType: resolvedParticipationType,
+      numParticipants: count,
+      teamInfo: {
+        teamName: extractedTeamName || null,
+        teamLeader: extractedTeamLeader || null,
+        teamContact: extractedTeamContact || null,
+      },
+      customFields: customFieldsObj,
+      docUrls: docUrlsObj,
+      additionalParticipants: additionalPartsArr,
+      compType: resolvedParticipationType,
+    };
+    const notesJsonString = typeof notes === "string" ? notes : JSON.stringify(fallbackNotesObj);
 
     // -------------------------------------------------------------------------
     // 3. PARTICIPANT LOOKUP OR CREATION
@@ -227,7 +304,7 @@ export async function POST(request: Request) {
           .maybeSingle();
 
         if (partError) {
-          console.warn("Participant lookup error:", partError.message);
+          console.warn("Participant lookup notice:", partError.message);
         }
         existingPart = data;
       } catch (e: any) {
@@ -238,41 +315,26 @@ export async function POST(request: Request) {
         participantId = existingPart.id;
         participantNumber = existingPart.participant_number;
 
-        // Update profile details & profile_photo
         const updatePayload: any = {
           full_name: participantData.fullName.trim(),
           phone: cleanPhone,
-          date_of_birth: participantData.dob || existingPart.date_of_birth,
+          date_of_birth: participantData.dob ? participantData.dob : existingPart.date_of_birth,
           gender: normalizeGender(participantData.gender) || existingPart.gender,
           address: participantData.address || existingPart.address,
           city: participantData.city || existingPart.city,
           state: participantData.state || existingPart.state,
           pincode: participantData.pincode || existingPart.pincode,
-          emergency_contact_name: participantData.emergencyName || existingPart.emergency_contact_name,
-          emergency_contact_phone: participantData.emergencyMobile || existingPart.emergency_contact_phone,
-          emergency_contact_relation: participantData.emergencyRelation || existingPart.emergency_contact_relation,
           updated_at: new Date().toISOString(),
         };
 
-        if (finalPhotoUrl) {
-          updatePayload.profile_photo = finalPhotoUrl;
-        }
-
+        if (finalPhotoUrl) updatePayload.profile_photo = finalPhotoUrl;
         if (finalVideoUrl) {
           updatePayload.video_path = finalVideoUrl;
           updatePayload.video_url = finalVideoUrl;
         }
 
-        const { error: updatePartErr } = await supabase
-          .from("participants")
-          .update(updatePayload)
-          .eq("id", participantId);
-
-        if (updatePartErr) {
-          console.warn("Notice updating participant record:", updatePartErr.message);
-        }
+        await supabase.from("participants").update(updatePayload).eq("id", participantId);
       } else {
-        // Create new participant record
         const newPartNum = `CGS-P-${Math.floor(100000 + Math.random() * 900000)}`;
         const insertPartPayload: any = {
           participant_number: newPartNum,
@@ -285,9 +347,6 @@ export async function POST(request: Request) {
           city: participantData.city || null,
           state: participantData.state || null,
           pincode: participantData.pincode || null,
-          emergency_contact_name: participantData.emergencyName || null,
-          emergency_contact_phone: participantData.emergencyMobile || null,
-          emergency_contact_relation: participantData.emergencyRelation || null,
           profile_photo: finalPhotoUrl || null,
           video_path: finalVideoUrl,
           video_url: finalVideoUrl,
@@ -300,250 +359,224 @@ export async function POST(request: Request) {
           .single();
 
         if (createPartErr) {
-          console.error("[REGISTRATION] DATABASE INSERT FAILED: Participant creation failed", createPartErr.message);
+          console.error("[REGISTRATION] Participant creation error:", createPartErr.message);
           return NextResponse.json({ success: false, error: `Participant creation failed: ${createPartErr.message}` }, { status: 500 });
         }
 
         participantId = newPart.id;
         participantNumber = newPart.participant_number;
       }
-
-      // Save document records in participant_documents
-      if (participantId && isValidUUID(participantId)) {
-        if (finalPhotoUrl) {
-          try {
-            await supabase.from("participant_documents").insert({
-              participant_id: participantId,
-              document_type: "participant_photo",
-              document_url: finalPhotoUrl,
-              file_name: "passport_photo",
-              verification_status: "pending",
-            });
-          } catch (docErr) {
-            console.warn("Photo document insertion notice:", docErr);
-          }
-        }
-        if (finalAadhaarUrl) {
-          try {
-            await supabase.from("participant_documents").insert({
-              participant_id: participantId,
-              document_type: "id_proof",
-              document_url: finalAadhaarUrl,
-              file_name: "aadhaar_card",
-              verification_status: "pending",
-            });
-          } catch (docErr) {
-            console.warn("Aadhaar document insertion notice:", docErr);
-          }
-        }
-        if (finalVideoUrl) {
-          try {
-            await supabase.from("participant_documents").insert({
-              participant_id: participantId,
-              document_type: "dance_video",
-              document_url: finalVideoUrl,
-              file_name: "audition_video",
-              verification_status: "pending",
-            });
-          } catch (docErr) {
-            console.warn("Video document insertion notice:", docErr);
-          }
-        }
-      }
     } else {
       participantId = `part_${Date.now()}`;
       participantNumber = `CGS-P-${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    // -------------------------------------------------------------------------
-    // 4. DUPLICATE REGISTRATION CHECK / UPDATE
-    // -------------------------------------------------------------------------
-    if (supabase && participantId && isValidUUID(eventRecord.id)) {
+    if (supabase && participantId && finalVideoUrl) {
       try {
-        const { data: existingRegs } = await supabase
-          .from("registrations")
-          .select("*")
-          .eq("event_id", eventRecord.id)
-          .eq("participant_id", participantId);
-
-        const activeReg = existingRegs?.find(
-          (r) => r.registration_status !== "cancelled" && r.registration_status !== "rejected"
-        );
-
-        if (activeReg) {
-          // Update registration if active
-          const nowIso = new Date().toISOString();
-          const updateRegData: any = {
-            updated_at: nowIso,
-          };
-
-          if (isPaid) {
-            updateRegData.registration_status = registrationStatus || "confirmed";
-            updateRegData.payment_status = paymentStatus || "paid";
-          }
-
-          await supabase.from("registrations").update(updateRegData).eq("id", activeReg.id);
-
-          if (isPaid && rzpOrderId) {
-            try {
-              await supabase.from("registration_payments").upsert({
-                registration_id: activeReg.id,
-                razorpay_order_id: rzpOrderId,
-                razorpay_payment_id: rzpPayId,
-                razorpay_signature: rzpSig,
-                amount: totalAmount,
-                currency: "INR",
-                status: "paid",
-                paid_at: nowIso,
-              }, { onConflict: "razorpay_order_id" });
-            } catch (pErr) {
-              console.warn("Payment upsert notice:", pErr);
-            }
-          }
-
-          console.log("[REGISTRATION] DATABASE INSERT SUCCESS (Existing Updated)", { registrationId: activeReg.id });
-          return NextResponse.json({
-            success: true,
-            confirmed: true,
-            alreadyRegistered: true,
-            registrationId: activeReg.id,
-            registrationNumber: activeReg.registration_number,
-            participantNumber: participantNumber,
-            amount: activeReg.amount || totalAmount,
-            currency: "INR",
-            razorpayOrderId: rzpOrderId,
-            videoPath: finalVideoUrl,
-            videoUrl: finalVideoUrl,
-            message: "Registration & audition video updated successfully!",
-          });
-        }
-      } catch (dupErr: any) {
-        console.warn("Notice checking duplicate registration:", dupErr.message);
+        const fileName = finalVideoUrl.split("/").pop() || "audition-video.mp4";
+        await supabase.from("participant_documents").insert({
+          participant_id: participantId,
+          document_type: "dance_video",
+          document_url: finalVideoUrl,
+          file_name: fileName,
+          mime_type: "video/mp4",
+        });
+      } catch (docErr) {
+        console.warn("Notice inserting participant_document for dance_video:", docErr);
       }
     }
 
     // -------------------------------------------------------------------------
-    // 5. CREATE REGISTRATION RECORD (INSERT)
+    // 4. CREATE OR UPDATE REGISTRATION RECORD (WITH SCHEMA CACHE RESILIENCE)
     // -------------------------------------------------------------------------
-    const regNumber = `CGS-REG-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const qrToken = `qr_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    const isAlreadyPaid = (paymentStatus === "paid" || !!rzpPayId) && totalAmount > 0;
+    const isFreeEvent = totalAmount === 0;
 
-    const initialRegStatus = isPaid || totalAmount === 0 ? (registrationStatus || "confirmed") : "payment_pending";
-    const initialPaymentStatus = isPaid || totalAmount === 0 ? (paymentStatus || "paid") : "unpaid";
+    const targetRegStatus = isAlreadyPaid || isFreeEvent ? (registrationStatus || "confirmed") : "payment_pending";
+    const targetPayStatus = isAlreadyPaid || isFreeEvent ? (paymentStatus || "paid") : "unpaid";
 
     let registrationRecord: any = null;
     const nowIso = new Date().toISOString();
 
     if (supabase && isValidUUID(eventRecord.id) && participantId && isValidUUID(participantId)) {
-      const insertPayload: any = {
+      // Check if participant already has a registration row for this event
+      const { data: existingRegs } = await supabase
+        .from("registrations")
+        .select("*")
+        .eq("event_id", eventRecord.id)
+        .eq("participant_id", participantId);
+
+      const existingPendingOrActive = existingRegs?.find(
+        (r) => r.registration_status !== "cancelled" && r.registration_status !== "rejected"
+      );
+
+      // Primary Payload with structured columns
+      const fullPayload: any = {
         event_id: eventRecord.id,
         participant_id: participantId,
-        registration_number: regNumber,
-        registration_status: initialRegStatus,
-        payment_status: initialPaymentStatus,
+        registration_status: targetRegStatus,
+        payment_status: targetPayStatus,
         amount: totalAmount,
-        qr_token: qrToken,
-        notes: typeof notes === "string" ? notes : JSON.stringify({ ...participantData, numParticipants: count }),
+        notes: notesJsonString,
+        participation_type: resolvedParticipationType,
+        team_name: extractedTeamName || null,
+        team_leader: extractedTeamLeader || null,
+        team_contact: extractedTeamContact || null,
+        participant_count: count,
+        custom_fields: customFieldsObj,
+        form_config_snapshot: formConfig,
+        additional_participants: additionalPartsArr,
+        document_urls: docUrlsObj,
+        updated_at: nowIso,
       };
 
-      if (categoryId && isValidUUID(categoryId)) insertPayload.category_id = categoryId;
-      if (danceStyleId && isValidUUID(danceStyleId)) insertPayload.dance_style_id = danceStyleId;
+      if (categoryId && isValidUUID(categoryId)) fullPayload.category_id = categoryId;
+      if (danceStyleId && isValidUUID(danceStyleId)) fullPayload.dance_style_id = danceStyleId;
 
-      const { data: createdReg, error: regError } = await supabase
-        .from("registrations")
-        .insert(insertPayload)
-        .select("*")
-        .single();
+      // Fallback Core Payload (used if Supabase schema cache hasn't loaded new columns yet)
+      const coreFallbackPayload: any = {
+        event_id: eventRecord.id,
+        participant_id: participantId,
+        registration_status: targetRegStatus,
+        payment_status: targetPayStatus,
+        amount: totalAmount,
+        notes: notesJsonString,
+        updated_at: nowIso,
+      };
+      if (categoryId && isValidUUID(categoryId)) coreFallbackPayload.category_id = categoryId;
+      if (danceStyleId && isValidUUID(danceStyleId)) coreFallbackPayload.dance_style_id = danceStyleId;
 
-      if (regError) {
-        console.error("[REGISTRATION] DATABASE INSERT FAILED: Registration insert failed", regError.message);
-        return NextResponse.json(
-          { success: false, error: `Registration creation failed: ${regError.message}` },
-          { status: 500 }
-        );
+      if (existingPendingOrActive) {
+        // Attempt update with full payload
+        const { data: updatedReg, error: updateErr } = await supabase
+          .from("registrations")
+          .update(fullPayload)
+          .eq("id", existingPendingOrActive.id)
+          .select("*")
+          .maybeSingle();
+
+        if (updateErr) {
+          console.warn("[REGISTRATION NOTICE] Full payload update failed (schema cache check):", updateErr.message);
+          // If error is due to missing column in PostgREST schema cache, retry with core payload + notes
+          if (
+            updateErr.message.includes("column") ||
+            updateErr.message.includes("schema cache") ||
+            updateErr.message.includes("additional_participants")
+          ) {
+            console.log("[REGISTRATION FALLBACK] Retrying update with core columns & embedded notes JSON...");
+            const { data: fbReg, error: fbErr } = await supabase
+              .from("registrations")
+              .update(coreFallbackPayload)
+              .eq("id", existingPendingOrActive.id)
+              .select("*")
+              .single();
+
+            if (fbErr) {
+              console.error("[REGISTRATION] Core fallback update error:", fbErr.message);
+              return NextResponse.json({ success: false, error: `Registration update failed: ${fbErr.message}` }, { status: 500 });
+            }
+            registrationRecord = fbReg;
+          } else {
+            return NextResponse.json({ success: false, error: `Registration update failed: ${updateErr.message}` }, { status: 500 });
+          }
+        } else {
+          registrationRecord = updatedReg;
+        }
+
+        console.log(`[REGISTRATION] PENDING/UPDATED registration row ID="${registrationRecord.id}", Number="${registrationRecord.registration_number}"`);
+      } else {
+        // Insert new pending registration record
+        const regNumber = `CGS-REG-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+        const qrToken = `qr_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+        fullPayload.registration_number = regNumber;
+        fullPayload.qr_token = qrToken;
+
+        coreFallbackPayload.registration_number = regNumber;
+        coreFallbackPayload.qr_token = qrToken;
+
+        const { data: insertedReg, error: insertErr } = await supabase
+          .from("registrations")
+          .insert(fullPayload)
+          .select("*")
+          .maybeSingle();
+
+        if (insertErr) {
+          console.warn("[REGISTRATION NOTICE] Full payload insert failed (schema cache check):", insertErr.message);
+          if (
+            insertErr.message.includes("column") ||
+            insertErr.message.includes("schema cache") ||
+            insertErr.message.includes("additional_participants")
+          ) {
+            console.log("[REGISTRATION FALLBACK] Retrying insert with core columns & embedded notes JSON...");
+            const { data: fbInsert, error: fbErr } = await supabase
+              .from("registrations")
+              .insert(coreFallbackPayload)
+              .select("*")
+              .single();
+
+            if (fbErr) {
+              console.error("[REGISTRATION] Core fallback insert error:", fbErr.message);
+              return NextResponse.json({ success: false, error: `Registration insertion failed: ${fbErr.message}` }, { status: 500 });
+            }
+            registrationRecord = fbInsert;
+          } else {
+            return NextResponse.json({ success: false, error: `Registration insertion failed: ${insertErr.message}` }, { status: 500 });
+          }
+        } else {
+          registrationRecord = insertedReg;
+        }
+
+        console.log(`[REGISTRATION] NEW PENDING registration created ID="${registrationRecord.id}", Number="${registrationRecord.registration_number}"`);
       }
 
-      registrationRecord = createdReg;
-
-      // Insert into registration_payments if payment details provided
+      // Record payment transaction if payment details present
       if (rzpOrderId || rzpPayId) {
         try {
-          await supabase.from("registration_payments").insert({
-            registration_id: createdReg.id,
+          await supabase.from("registration_payments").upsert({
+            registration_id: registrationRecord.id,
             razorpay_order_id: rzpOrderId,
             razorpay_payment_id: rzpPayId,
             razorpay_signature: rzpSig,
             amount: totalAmount,
             currency: "INR",
-            status: isPaid ? "paid" : "created",
-            paid_at: isPaid ? nowIso : null,
-          });
-        } catch (payInsErr) {
-          console.warn("Notice inserting registration_payments:", payInsErr);
+            status: targetPayStatus === "paid" ? "paid" : "created",
+            paid_at: targetPayStatus === "paid" ? nowIso : null,
+          }, { onConflict: "razorpay_order_id" });
+        } catch (payErr) {
+          console.warn("Notice updating registration_payments:", payErr);
         }
-
-        try {
-          await supabase.from("payment_transactions").insert({
-            registration_id: createdReg.id,
-            transaction_type: "payment",
-            amount: totalAmount,
-            currency: "INR",
-            gateway: "Razorpay",
-            gateway_transaction_id: rzpPayId || rzpOrderId,
-            status: "success",
-            gateway_response: { rzpOrderId, rzpPayId, verified_at: nowIso },
-            processed_at: nowIso,
-          });
-        } catch (txInsErr) {
-          console.warn("Notice inserting payment_transactions:", txInsErr);
-        }
-      }
-
-      // Update event participant count asynchronously if available
-      try {
-        const { data: countData } = await supabase
-          .from("registrations")
-          .select("id", { count: "exact", head: true })
-          .eq("event_id", eventRecord.id)
-          .eq("registration_status", "confirmed");
-
-        if (countData !== null) {
-          await supabase
-            .from("events")
-            .update({ current_participants: countData })
-            .eq("id", eventRecord.id);
-        }
-      } catch (countErr) {
-        console.warn("Notice updating event participant count:", countErr);
       }
     } else {
       registrationRecord = {
         id: `reg_${Date.now()}`,
-        registration_number: regNumber,
+        registration_number: `CGS-REG-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`,
         event_id: eventRecord.id,
         participant_id: participantId,
         amount: totalAmount,
-        registration_status: initialRegStatus,
-        payment_status: initialPaymentStatus,
+        registration_status: targetRegStatus,
+        payment_status: targetPayStatus,
+        participation_type: resolvedParticipationType,
+        team_name: extractedTeamName,
+        participant_count: count,
       };
     }
 
-    console.log("[REGISTRATION] DATABASE INSERT SUCCESS", { registrationId: registrationRecord.id, registrationNumber: regNumber });
-
     return NextResponse.json({
       success: true,
-      confirmed: initialRegStatus === "confirmed",
+      pending: targetRegStatus === "payment_pending",
+      confirmed: targetRegStatus === "confirmed",
       registrationId: registrationRecord.id,
-      registrationNumber: regNumber,
+      registrationNumber: registrationRecord.registration_number,
       participantNumber: participantNumber,
       amount: totalAmount,
       currency: "INR",
-      razorpayOrderId: rzpOrderId,
-      videoPath: finalVideoUrl,
-      videoUrl: finalVideoUrl,
+      participationType: resolvedParticipationType,
+      teamName: extractedTeamName || null,
+      participantCount: count,
     });
   } catch (err: any) {
-    console.error("[REGISTRATION] DATABASE INSERT FAILED:", err);
+    console.error("[REGISTRATION] API POST EXCEPTION:", err);
     return NextResponse.json(
       { success: false, error: err.message || "An unexpected error occurred during registration." },
       { status: 500 }
@@ -563,12 +596,16 @@ export async function GET(request: Request) {
     const limitParam = parseInt(searchParams.get("limit") || "0", 10);
     const statusParam = searchParams.get("status");
 
+    // Try full select query with structured columns first
     let query = supabase
       .from("registrations")
       .select(`
-        id, registration_number, event_id, participant_id, category_id, dance_style_id, registration_status, payment_status, registration_date, amount, notes, qr_token, created_at, updated_at,
+        id, registration_number, event_id, participant_id, category_id, dance_style_id,
+        registration_status, payment_status, registration_date, amount, notes, qr_token,
+        participation_type, team_name, team_leader, participant_count, custom_fields, additional_participants, document_urls,
+        created_at, updated_at,
         events ( id, title, slug, venue, city, state, event_date, registration_fee ),
-        participants ( id, participant_number, full_name, email, phone, city, state ),
+        participants ( id, participant_number, full_name, email, phone, city, state, video_path, video_url ),
         event_categories ( id, name ),
         dance_styles ( id, name ),
         registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
@@ -586,7 +623,39 @@ export async function GET(request: Request) {
       query = query.range(from, to);
     }
 
-    const { data: registrations, count, error } = await query;
+    let { data: registrations, count, error } = await query;
+
+    // Fallback GET query if new columns are not yet in PostgREST schema cache
+    if (error && (error.message.includes("column") || error.message.includes("schema cache"))) {
+      console.warn("[GET /api/registrations] Full select failed due to schema cache. Retrying with core columns fallback...");
+      let fbQuery = supabase
+        .from("registrations")
+        .select(`
+          id, registration_number, event_id, participant_id, category_id, dance_style_id,
+          registration_status, payment_status, registration_date, amount, notes, qr_token,
+          created_at, updated_at,
+          events ( id, title, slug, venue, city, state, event_date, registration_fee ),
+          participants ( id, participant_number, full_name, email, phone, city, state, video_path, video_url ),
+          event_categories ( id, name ),
+          dance_styles ( id, name ),
+          registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
+        `, pageParam > 0 && limitParam > 0 ? { count: "exact" } : undefined);
+
+      if (statusParam && statusParam !== "all") {
+        fbQuery = fbQuery.eq("registration_status", statusParam);
+      }
+      fbQuery = fbQuery.order("created_at", { ascending: false });
+      if (pageParam > 0 && limitParam > 0) {
+        const from = (pageParam - 1) * limitParam;
+        const to = from + limitParam - 1;
+        fbQuery = fbQuery.range(from, to);
+      }
+
+      const fbRes = await fbQuery;
+      registrations = fbRes.data as any;
+      count = fbRes.count;
+      error = fbRes.error;
+    }
 
     if (error) {
       console.error("GET /api/registrations error:", error.message);
@@ -605,4 +674,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: err.message || "Failed to fetch registrations." }, { status: 500 });
   }
 }
-

@@ -522,7 +522,7 @@ export default function EventDetailPage() {
               </div>
 
               {/* Register Button */}
-              <SidebarRegisterBtn href={`/register/${evt.id}`} />
+              <SidebarRegisterBtn href={`/register/${evt.slug || evt.id}`} />
 
               {/* Subtext */}
               <div style={{ textAlign: "center", fontSize: 12, color: "#F3E8FF", marginTop: 14, fontWeight: 600 }}>
