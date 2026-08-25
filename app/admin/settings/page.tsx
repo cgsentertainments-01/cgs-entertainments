@@ -1,146 +1,136 @@
 "use client";
 
-import React, { useState } from "react";
-import { Settings, Shield, User, Lock, CheckCircle2, KeyRound } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import React from "react";
+import Link from "next/link";
+import {
+  Settings,
+  Image as ImageIcon,
+  UserCheck,
+  Globe,
+  CreditCard,
+  BarChart3,
+  ChevronRight,
+  ShieldCheck,
+  Sliders,
+} from "lucide-react";
 
 export default function AdminSettingsPage() {
-  const { user } = useAuth();
-  const [adminName, setAdminName] = useState("Admin CGS");
-  const [adminEmail, setAdminEmail] = useState("cgsentertainments01@gmail.com");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [savedMsg, setSavedMsg] = useState(false);
-
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 3000);
-  };
+  const settingsSections = [
+    {
+      title: "Banner Management",
+      desc: "Manage homepage banners, promotional slides, and mobile banners.",
+      href: "/admin/banners",
+      icon: ImageIcon,
+      color: "#7C3AED",
+      bg: "#F3E8FF",
+    },
+    {
+      title: "Guests & Judges",
+      desc: "Manage judges roster, guest star appearances, and profile photos.",
+      href: "/admin/guests-judges",
+      icon: UserCheck,
+      color: "#2563EB",
+      bg: "#EFF6FF",
+    },
+    {
+      title: "Event Categories",
+      desc: "Configure event master categories (Dance, Modeling, Acting, Singing).",
+      href: "/admin/categories",
+      icon: Globe,
+      color: "#16A34A",
+      bg: "#DCFCE7",
+    },
+    {
+      title: "Website Settings",
+      desc: "Customize homepage text, SEO metadata, contact details, and social links.",
+      href: "/admin/website-settings",
+      icon: Sliders,
+      color: "#D97706",
+      bg: "#FEF3C7",
+    },
+    {
+      title: "Payment Gateway & Audit Logs",
+      desc: "Inspect Razorpay order logs, payment status audits, and transaction histories.",
+      href: "/admin/payments",
+      icon: CreditCard,
+      color: "#0284C7",
+      bg: "#E0F2FE",
+    },
+    {
+      title: "Reports & Analytics",
+      desc: "Export registration reports, financial summaries, and event analytics.",
+      href: "/admin/reports",
+      icon: BarChart3,
+      color: "#9333EA",
+      bg: "#F3E8FF",
+    },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* Header */}
       <div>
-        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 4px", letterSpacing: -0.4 }}>
-          Admin Account &amp; Security Settings
+        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 4px" }}>
+          Admin Settings & Operations
         </h1>
         <p style={{ fontSize: 14, color: "#64748B", margin: 0, fontWeight: 500 }}>
-          Manage your CGS Admin profile credentials and authentication security settings.
+          Manage global site settings, media banners, guest judges, and system configurations.
         </p>
       </div>
 
-      {savedMsg && (
-        <div style={{ padding: "14px 18px", background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 14, color: "#166534", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 10 }}>
-          <CheckCircle2 size={18} color="#22C55E" /> Admin profile updated successfully.
-        </div>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 24 }}>
-        {/* Profile Details */}
-        <div style={{ background: "#ffffff", borderRadius: 24, border: "1.5px solid #E2E8F0", padding: "28px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 20px" }}>
-            Admin Profile Info
-          </h2>
-
-          <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
-                Admin Display Name
-              </label>
-              <input
-                type="text"
-                value={adminName}
-                onChange={(e) => setAdminName(e.target.value)}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none" }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
-                Official Admin Email Address
-              </label>
-              <input
-                type="email"
-                value={adminEmail}
-                disabled
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, background: "#F8FAFC", color: "#64748B" }}
-              />
-              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>
-                Primary master admin email verified in Supabase Auth.
+      {/* Grid of Settings Hub Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+        {settingsSections.map((sec) => {
+          const Icon = sec.icon;
+          return (
+            <Link
+              key={sec.title}
+              href={sec.href}
+              style={{
+                background: "#fff",
+                borderRadius: 20,
+                border: "1px solid #E2E8F0",
+                padding: 24,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                gap: 16,
+                textDecoration: "none",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.02)",
+              }}
+              className="admin-settings-card"
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: sec.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Icon size={24} color={sec.color} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 900, color: "#0F172A", margin: "0 0 4px" }}>
+                    {sec.title}
+                  </h3>
+                  <p style={{ fontSize: 13, color: "#64748B", margin: 0, lineHeight: 1.4 }}>
+                    {sec.desc}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              style={{
-                padding: "12px 22px",
-                borderRadius: 12,
-                background: "linear-gradient(135deg, #7C3AED, #6D28D9)",
-                color: "#fff",
-                border: "none",
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: "pointer",
-                width: "fit-content",
-              }}
-            >
-              Save Profile Changes
-            </button>
-          </form>
-        </div>
-
-        {/* Change Password */}
-        <div style={{ background: "#ffffff", borderRadius: 24, border: "1.5px solid #E2E8F0", padding: "28px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 20px" }}>
-            Change Password
-          </h2>
-
-          <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
-                New Password
-              </label>
-              <input
-                type="password"
-                placeholder="••••••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none" }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 6, display: "block" }}>
-                Confirm New Password
-              </label>
-              <input
-                type="password"
-                placeholder="••••••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none" }}
-              />
-            </div>
-
-            <button
-              type="submit"
-              style={{
-                padding: "12px 22px",
-                borderRadius: 12,
-                background: "#0284C7",
-                color: "#fff",
-                border: "none",
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: "pointer",
-                width: "fit-content",
-              }}
-            >
-              Update Password
-            </button>
-          </form>
-        </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 800, color: sec.color }}>
+                <span>Configure Section</span>
+                <ChevronRight size={16} />
+              </div>
+            </Link>
+          );
+        })}
       </div>
+
+      <style>{`
+        .admin-settings-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.06) !important;
+          border-color: #CBD5E1 !important;
+        }
+      `}</style>
     </div>
   );
 }

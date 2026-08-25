@@ -35,13 +35,14 @@ export async function GET(request: Request) {
     // 2. Fetch registrations for these participants
     const { data: registrations } = await supabaseAdmin
       .from("registrations")
-      .select("id, registration_number, event_id, participant_id, registration_status, payment_status, registration_date, amount, notes, created_at")
+      .select("id, registration_number, event_id, participant_id, registration_status, payment_status, registration_date, amount, notes, participation_type, team_name, created_at")
       .in("participant_id", participantIds);
 
     if (!registrations || registrations.length === 0) {
       return NextResponse.json({ success: true, myEvents: [] });
     }
 
+    const registrationIds = registrations.map((r) => r.id);
     const eventIds = Array.from(new Set(registrations.map((r) => r.event_id).filter(Boolean)));
 
     // 3. Fetch Events
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
     // 4. Fetch Event Results
     const { data: resultsList } = await supabaseAdmin
       .from("event_results")
-      .select("id, event_id, participant_id, result_type, rank, score, certificate_url, remarks, created_at")
+      .select("id, event_id, participant_id, result_type, position, certificate_url, notes, created_at")
       .in("participant_id", participantIds);
 
     const resultsMap: Record<string, any> = {};
@@ -66,7 +67,44 @@ export async function GET(request: Request) {
       resultsMap[`${res.event_id}_${res.participant_id}`] = res;
     });
 
-    // 5. Combine data into MyEvents structure
+    // 5. Fetch Competition Rounds Progression for these registrations
+    let roundProgressionMap: Record<string, any[]> = {};
+    try {
+      const { data: roundParts } = await supabaseAdmin
+        .from("competition_round_participants")
+        .select(`
+          id, round_id, registration_id, status, result_notes, promoted_at,
+          competition_rounds ( id, name, round_number, status, round_date )
+        `)
+        .in("registration_id", registrationIds);
+
+      if (roundParts && roundParts.length > 0) {
+        roundParts.forEach((rp: any) => {
+          const regId = rp.registration_id;
+          const rMeta = rp.competition_rounds || {};
+          if (!roundProgressionMap[regId]) roundProgressionMap[regId] = [];
+          roundProgressionMap[regId].push({
+            round_id: rp.round_id,
+            round_name: rMeta.name || `Round ${rMeta.round_number || 1}`,
+            round_number: rMeta.round_number || 1,
+            round_status: rMeta.status || "upcoming",
+            round_date: rMeta.round_date || null,
+            participant_status: rp.status || "pending",
+            result_notes: rp.result_notes || null,
+            promoted_at: rp.promoted_at || null,
+          });
+        });
+
+        // Sort rounds by round_number for each registration
+        Object.keys(roundProgressionMap).forEach((regId) => {
+          roundProgressionMap[regId].sort((a, b) => a.round_number - b.round_number);
+        });
+      }
+    } catch (roundErr) {
+      console.warn("Notice fetching competition round progression in /api/my-events:", roundErr);
+    }
+
+    // 6. Combine data into MyEvents structure
     const myEvents = registrations.map((reg) => {
       const evt = eventsMap[reg.event_id] || {};
       const res = resultsMap[`${reg.event_id}_${reg.participant_id}`] || null;
@@ -81,6 +119,8 @@ export async function GET(request: Request) {
         }
       }
 
+      const roundsList = roundProgressionMap[reg.id] || [];
+
       return {
         registration_id: reg.id,
         registration_number: reg.registration_number,
@@ -91,6 +131,8 @@ export async function GET(request: Request) {
         participant_id: reg.participant_id,
         participant_name: part.full_name,
         participant_number: part.participant_number,
+        participation_type: reg.participation_type || parsedNotes.participationType || "Solo",
+        team_name: reg.team_name || parsedNotes.teamInfo?.teamName || null,
         video_url: part.video_url || part.video_path || parsedNotes.videoUrl || null,
 
         event_id: reg.event_id,
@@ -100,6 +142,9 @@ export async function GET(request: Request) {
         venue: evt.venue || evt.location || "Venue TBA",
         city: evt.city || "Hyderabad",
         status: evt.status || "completed",
+
+        // Competition Rounds Progression Timeline
+        rounds: roundsList,
 
         // Assigned Result Data
         result: res

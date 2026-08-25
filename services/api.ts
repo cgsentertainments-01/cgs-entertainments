@@ -145,7 +145,7 @@ export async function getBanners(): Promise<Banner[]> {
       const nowIso = new Date().toISOString();
       const { data, error } = await supabase
         .from("banners")
-        .select("id, title, subtitle, image_url, mobile_image_url, link_url, target_event_id, cta_text, banner_type, display_order, is_active, start_date, end_date")
+        .select("*")
         .eq("is_active", true)
         .or(`start_date.is.null,start_date.lte.${nowIso}`)
         .or(`end_date.is.null,end_date.gte.${nowIso}`)

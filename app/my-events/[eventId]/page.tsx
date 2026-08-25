@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import {
@@ -45,6 +46,18 @@ interface MyEventDetail {
     selected_at?: string;
     notes?: string;
   };
+  participation_type?: string;
+  team_name?: string | null;
+  rounds?: Array<{
+    round_id: string;
+    round_name: string;
+    round_number: number;
+    round_status: string;
+    round_date?: string | null;
+    participant_status: string;
+    result_notes?: string | null;
+    promoted_at?: string | null;
+  }>;
 }
 
 const RESULT_BADGE_MAP: Record<string, { label: string; badge: string; bg: string; color: string; desc: string }> = {
@@ -92,13 +105,9 @@ const RESULT_BADGE_MAP: Record<string, { label: string; badge: string; bg: strin
   },
 };
 
-export default function UserEventResultPage({
-  params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
-  const resolvedParams = use(params);
-  const eventId = resolvedParams.eventId;
+export default function UserEventResultPage() {
+  const routeParams = useParams();
+  const eventId = (routeParams?.eventId as string) || "";
   const { user } = useAuth();
 
   const [eventItem, setEventItem] = useState<MyEventDetail | null>(null);
@@ -202,6 +211,96 @@ export default function UserEventResultPage({
                 </div>
               </div>
             </div>
+
+            {/* Competition Journey & Round Progression */}
+            {eventItem.rounds && eventItem.rounds.length > 0 && (
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: 24,
+                  border: "1.5px solid #E2E8F0",
+                  padding: "28px 32px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#64748B", textTransform: "uppercase", letterSpacing: 1 }}>
+                    Competition Progression & Round History
+                  </div>
+                  {eventItem.team_name && (
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: "#6D28D9", background: "#F3E8FF", padding: "4px 12px", borderRadius: 8 }}>
+                      Team: {eventItem.team_name} ({eventItem.participation_type || "Group"})
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 16, overflowX: "auto", paddingBottom: 8 }}>
+                  {eventItem.rounds.map((r, idx) => {
+                    const isQualified = r.participant_status === "qualified" || r.participant_status === "winner" || r.participant_status === "runner_up" || r.participant_status === "finalist";
+                    const isEliminated = r.participant_status === "eliminated";
+                    const isWinner = r.participant_status === "winner";
+
+                    return (
+                      <React.Fragment key={r.round_id || idx}>
+                        {idx > 0 && (
+                          <div style={{ height: 2, width: 32, background: isQualified ? "#22C55E" : "#E2E8F0", flexShrink: 0 }} />
+                        )}
+
+                        <div
+                          style={{
+                            background: isWinner
+                              ? "#FEF3C7"
+                              : isQualified
+                              ? "#DCFCE7"
+                              : isEliminated
+                              ? "#FEE2E2"
+                              : "#F8FAFC",
+                            border: `1.5px solid ${
+                              isWinner
+                                ? "#F59E0B"
+                                : isQualified
+                                ? "#22C55E"
+                                : isEliminated
+                                ? "#EF4444"
+                                : "#CBD5E1"
+                            }`,
+                            padding: "16px 20px",
+                            borderRadius: 16,
+                            minWidth: 160,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 900, color: "#64748B", textTransform: "uppercase" }}>
+                            Round {r.round_number}
+                          </div>
+                          <div style={{ fontSize: 15, fontWeight: 900, color: "#0F172A", margin: "2px 0 6px" }}>
+                            {r.round_name}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 900,
+                              color: isWinner
+                                ? "#B45309"
+                                : isQualified
+                                ? "#15803D"
+                                : isEliminated
+                                ? "#B91C1C"
+                                : "#64748B",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            {isWinner ? "🏆 Winner" : isQualified ? "✓ Qualified" : isEliminated ? "✕ Eliminated" : "⏳ Pending"}
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Result Badge Section */}
             <div

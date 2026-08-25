@@ -10,6 +10,7 @@ import {
   formatResultLabel,
   generateCertificateNumber,
   generateVerificationToken,
+  createAuditHistoryItem,
 } from "@/lib/certificate";
 
 /**
@@ -42,14 +43,47 @@ export async function GET(
 
     const snapshot = extractCertificateSnapshot(cert.certificate_url);
 
+    // Fetch participant & registration details
+    const { data: reg } = await supabase.from("registrations").select("*").eq("id", cert.registration_id).maybeSingle();
+    const { data: participant } = await supabase.from("participants").select("*").eq("id", cert.participant_id).maybeSingle();
+    const { data: eventData } = await supabase.from("events").select("*").eq("id", cert.event_id).maybeSingle();
+    const { data: catData } = reg?.category_id ? await supabase.from("event_categories").select("name").eq("id", reg.category_id).maybeSingle() : { data: null };
+
+    // Fetch round if present
+    let roundName = "Final Round";
+    if (cert.round_id) {
+      const { data: roundData } = await supabase.from("competition_rounds").select("name").eq("id", cert.round_id).maybeSingle();
+      if (roundData?.name) roundName = roundData.name;
+    }
+
+    // Build history if missing
+    let historyLogs = cert.history || snapshot?.history_logs || [];
+    if (!Array.isArray(historyLogs) || historyLogs.length === 0) {
+      historyLogs = [
+        createAuditHistoryItem("created", "Certificate Record Created", `Created on ${new Date(cert.created_at).toLocaleDateString("en-IN")}`),
+        createAuditHistoryItem("issued", "Certificate Issued", `Issued on ${cert.issued_at ? new Date(cert.issued_at).toLocaleDateString("en-IN") : "Creation"}`),
+      ];
+      if (cert.status === "revoked") {
+        historyLogs.push(createAuditHistoryItem("revoked", "Certificate Revoked", cert.revoke_reason || "Revoked by admin"));
+      }
+    }
+
     return NextResponse.json({
       success: true,
       certificate: {
         ...cert,
+        history: historyLogs,
         snapshot_data: snapshot,
-        participant_name: snapshot?.participant_name || "Participant",
-        participant_number: snapshot?.participant_number || cert.participant_id,
-        event_title: snapshot?.event_title || "CGS Event",
+        participant_name: snapshot?.participant_name || participant?.full_name || "Participant",
+        participant_number: snapshot?.participant_number || participant?.participant_number || cert.participant_id,
+        participant_email: participant?.email || "",
+        registration_number: reg?.registration_number || "",
+        event_title: snapshot?.event_title || eventData?.title || "CGS Event",
+        competition_name: snapshot?.competition_name || catData?.name || "General",
+        category_name: snapshot?.category_name || catData?.name || "General",
+        round_name: snapshot?.round_name || roundName,
+        participation_type: snapshot?.participation_type || "Solo",
+        result_type: cert.certificate_type,
       },
     });
   } catch (err: any) {
@@ -60,7 +94,7 @@ export async function GET(
 
 /**
  * PUT /api/certificates/[id]
- * Reissue or Revoke an existing certificate with mandatory reason tracking.
+ * Reissue or Revoke an existing certificate with mandatory reason tracking & history audit trail.
  */
 export async function PUT(
   request: Request,
@@ -84,7 +118,8 @@ export async function PUT(
       certificate_title = null,
       authorized_signatory = null,
       custom_issue_date = null,
-      action_type = "reissue", // 'reissue' | 'revoke'
+      action_type = "reissue", // 'reissue' | 'revoke' | 'update_status'
+      new_status = null,
     } = body;
 
     const supabase = getSupabaseAdmin();
@@ -103,12 +138,21 @@ export async function PUT(
       return NextResponse.json({ success: false, error: "Certificate record not found" }, { status: 404 });
     }
 
+    let currentHistory: any[] = existingCert.history || [];
+    if (!Array.isArray(currentHistory)) currentHistory = [];
+
     // REVOCATION WORKFLOW
     if (action_type === "revoke") {
+      const revokeReasonText = reissue_reason || "Revoked by administrator";
+      const revokeHistoryItem = createAuditHistoryItem("revoked", "Certificate Revoked", revokeReasonText);
+      const updatedHistory = [...currentHistory, revokeHistoryItem];
+
       const { data: revokedCert, error: revErr } = await supabase
         .from("certificates")
         .update({
           status: "revoked",
+          revoke_reason: revokeReasonText,
+          history: updatedHistory,
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
@@ -122,7 +166,40 @@ export async function PUT(
       return NextResponse.json({
         success: true,
         message: `Certificate ${existingCert.certificate_number} has been revoked.`,
-        certificate: revokedCert,
+        certificate: {
+          ...revokedCert,
+          history: updatedHistory,
+        },
+      });
+    }
+
+    // STATUS UPDATE WORKFLOW (Draft / Pending / Issued)
+    if (action_type === "update_status" && new_status) {
+      const statusHistoryItem = createAuditHistoryItem("updated", `Status Updated to ${new_status.toUpperCase()}`, `Updated by admin to ${new_status}`);
+      const updatedHistory = [...currentHistory, statusHistoryItem];
+
+      const { data: updatedCert, error: upErr } = await supabase
+        .from("certificates")
+        .update({
+          status: new_status,
+          history: updatedHistory,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (upErr) {
+        return NextResponse.json({ success: false, error: upErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Certificate status updated to ${new_status}.`,
+        certificate: {
+          ...updatedCert,
+          history: updatedHistory,
+        },
       });
     }
 
@@ -150,7 +227,7 @@ export async function PUT(
       .eq("id", registration.event_id)
       .maybeSingle();
 
-    // 3. Fetch latest assigned result from Participant Registry
+    // 3. Fetch assigned result from Participant Registry
     let latestResultType = "pending";
     try {
       const { data: dbResult } = await supabase
@@ -182,11 +259,13 @@ export async function PUT(
     }
 
     let categoryName = "General";
-    let compType = "Solo";
+    let compType = registration.participation_type || "Solo";
     if (registration.notes) {
       try {
         const parsed = typeof registration.notes === "string" ? JSON.parse(registration.notes) : registration.notes;
-        if (parsed.compType) compType = parsed.compType;
+        if (parsed.participationType || parsed.participation_type || parsed.compType) {
+          compType = parsed.participationType || parsed.participation_type || parsed.compType;
+        }
       } catch {}
     }
     if (registration.category_id) {
@@ -194,11 +273,16 @@ export async function PUT(
       if (cat?.name) categoryName = cat.name;
     }
 
-    // Mark old certificate as revoked
+    // Mark previous certificate as revoked/superseded
+    const revokeOldHistoryItem = createAuditHistoryItem("revoked", "Certificate Superseded", `Reissued as new certificate. Reason: ${reissue_reason}`);
+    const updatedOldHistory = [...currentHistory, revokeOldHistoryItem];
+
     await supabase
       .from("certificates")
       .update({
         status: "revoked",
+        revoke_reason: `Reissued as new version. Reason: ${reissue_reason}`,
+        history: updatedOldHistory,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
@@ -211,6 +295,11 @@ export async function PUT(
 
     const existingSnapshot = extractCertificateSnapshot(existingCert.certificate_url);
 
+    const newHistory: any[] = [
+      createAuditHistoryItem("created", "Certificate Reissued", `Reissued from ${existingCert.certificate_number}. Reason: ${reissue_reason}`),
+      createAuditHistoryItem("issued", "New Certificate Version Issued", `Issued on ${newIssueDateStr}`),
+    ];
+
     const newSnapshot: CertificateSnapshotData = {
       participant_name: (participant_display_name || existingSnapshot?.participant_name || participant?.full_name || "Participant").trim(),
       participant_number: participant?.participant_number || `CGS-P-${registration.participant_id.substring(0, 6)}`,
@@ -218,6 +307,8 @@ export async function PUT(
       event_date: eventData?.event_date || null,
       venue: eventData?.venue || eventData?.city || null,
       category_name: categoryName,
+      competition_name: categoryName,
+      round_name: "Final Round",
       participation_type: compType,
       result_label: resultMeta.label,
       result_badge: resultMeta.badge,
@@ -230,9 +321,12 @@ export async function PUT(
       verification_token: newVerificationToken,
       issue_date: newIssueDateStr,
       template_id: existingCert.template_id || null,
+      background_url: existingSnapshot?.background_url || null,
       custom_notes: `Reissued from ${existingCert.certificate_number}. Reason: ${reissue_reason}`,
       revoke_reason: reissue_reason,
       reissued_from_id: existingCert.id,
+      history_logs: newHistory,
+      text_elements: existingSnapshot?.text_elements,
     };
 
     const newCertHTML = renderCertificateHTMLFromSnapshot(newSnapshot);
@@ -243,10 +337,14 @@ export async function PUT(
       registration_id: registration.id,
       participant_id: registration.participant_id,
       event_id: registration.event_id,
+      round_id: existingCert.round_id || null,
+      template_id: existingCert.template_id || null,
       certificate_type: eligibility.certificateType,
       certificate_url: newCertPayloadUrl,
       verification_token: newVerificationToken,
       status: "issued",
+      history: newHistory,
+      reissued_from_id: existingCert.id,
       issued_at: new Date().toISOString(),
     };
 
@@ -265,6 +363,7 @@ export async function PUT(
       message: `Certificate ${newCertNumber} reissued successfully (reason: '${reissue_reason}'). Previous cert ${existingCert.certificate_number} marked superseded.`,
       certificate: {
         ...insertedNewCert,
+        history: newHistory,
         snapshot_data: newSnapshot,
       },
     });

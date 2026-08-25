@@ -325,8 +325,26 @@ function normalizeStatus(value: unknown): string {
 
     if (is_featured !== undefined)
       updatePayload.is_featured = Boolean(is_featured);
-    if (terms_conditions !== undefined || rules_regulations !== undefined)
-      updatePayload.terms_conditions = terms_conditions || rules_regulations || "";
+    if (terms_conditions !== undefined) updatePayload.terms_conditions = terms_conditions;
+    if (rules_regulations !== undefined) updatePayload.rules_regulations = rules_regulations;
+    if (mobile_banner_image !== undefined) updatePayload.mobile_banner_image = mobile_banner_image;
+    if (min_age !== undefined) updatePayload.min_age = min_age;
+    if (max_age !== undefined) updatePayload.max_age = max_age;
+    if (registration_type !== undefined) updatePayload.registration_type = registration_type;
+    if (max_team_size !== undefined) updatePayload.max_team_size = max_team_size;
+    if (allow_multiple_categories !== undefined) updatePayload.allow_multiple_categories = Boolean(allow_multiple_categories);
+    if (registration_form_type !== undefined) updatePayload.registration_form_type = registration_form_type;
+    if (participation_categories !== undefined) updatePayload.participation_categories = participation_categories;
+    if (dance_styles !== undefined) updatePayload.dance_styles = dance_styles;
+    if (required_documents !== undefined) updatePayload.required_documents = required_documents;
+    if (payment_required !== undefined) updatePayload.payment_required = Boolean(payment_required);
+    if (currency !== undefined) updatePayload.currency = currency;
+    if (refund_policy !== undefined) updatePayload.refund_policy = refund_policy;
+    if (schedule !== undefined) updatePayload.schedule = schedule;
+    if (judges !== undefined) updatePayload.judges = judges;
+    if (contact_info !== undefined) updatePayload.contact_info = contact_info;
+    if (seo !== undefined) updatePayload.seo = seo;
+    if (homepage_settings !== undefined) updatePayload.homepage_settings = homepage_settings;
 
     console.log(`[PUT /api/events/${eventUUID}] Target Event UUID: ${eventUUID}`);
     console.log(`[PUT /api/events/${eventUUID}] Update payload:`, JSON.stringify(updatePayload));

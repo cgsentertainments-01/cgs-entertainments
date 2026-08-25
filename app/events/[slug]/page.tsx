@@ -270,6 +270,7 @@ export default function EventDetailPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "";
   const [evt, setEvt] = useState<any | null>(null);
+  const [activeRoundName, setActiveRoundName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
 
@@ -281,7 +282,23 @@ export default function EventDetailPage() {
         const res = await fetch(`/api/events?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          setEvt(data.event || null);
+          const loadedEvt = data.event || null;
+          setEvt(loadedEvt);
+
+          if (loadedEvt && loadedEvt.id) {
+            try {
+              const rRes = await fetch(`/api/events/${encodeURIComponent(loadedEvt.id)}/rounds`);
+              if (rRes.ok) {
+                const rData = await rRes.json();
+                const activeRound = (rData.rounds || []).find((r: any) => r.status === "active");
+                if (activeRound) {
+                  setActiveRoundName(activeRound.name);
+                }
+              }
+            } catch (rErr) {
+              console.warn("Notice fetching rounds for event detail page:", rErr);
+            }
+          }
         } else {
           setEvt(null);
         }
@@ -359,8 +376,8 @@ export default function EventDetailPage() {
             }}
           />
 
-          {/* Badge */}
-          <div style={{ position: "absolute", top: 24, left: 32 }}>
+          {/* Badges */}
+          <div style={{ position: "absolute", top: 24, left: 32, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <span
               style={{
                 padding: "6px 14px",
@@ -376,6 +393,27 @@ export default function EventDetailPage() {
             >
               {evt.badge || evt.category || "EVENT"}
             </span>
+
+            {activeRoundName && (
+              <span
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  background: "#16A34A",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 900,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  boxShadow: "0 2px 10px rgba(22, 163, 74, 0.4)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                🔥 Current Round: {activeRoundName}
+              </span>
+            )}
           </div>
 
           {/* Action Buttons */}

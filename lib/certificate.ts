@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 
 export interface CertificateEligibility {
   eligible: boolean;
-  certificateType: "winner" | "runner_up" | "merit" | "appreciation" | "participation" | null;
+  certificateType: "winner" | "runner_up" | "finalist" | "merit" | "appreciation" | "participation" | "achievement" | "custom" | null;
   title: string;
   reason?: string;
 }
@@ -22,6 +22,15 @@ export interface CanvaTextElement {
   is_custom?: boolean;
 }
 
+export interface CertificateHistoryItem {
+  id: string;
+  action: "created" | "issued" | "reissued" | "revoked" | "updated";
+  title: string;
+  timestamp: string;
+  performed_by?: string;
+  notes?: string;
+}
+
 export interface CertificateSnapshotData {
   participant_name: string;
   participant_number: string;
@@ -29,6 +38,8 @@ export interface CertificateSnapshotData {
   event_date: string | null;
   venue: string | null;
   category_name: string | null;
+  competition_name?: string | null;
+  round_name?: string | null;
   participation_type: string | null;
   result_label: string;
   result_badge: string;
@@ -46,11 +57,12 @@ export interface CertificateSnapshotData {
   custom_notes?: string | null;
   revoke_reason?: string | null;
   reissued_from_id?: string | null;
+  history_logs?: CertificateHistoryItem[];
   text_elements?: CanvaTextElement[];
 }
 
 /**
- * Check Certificate Eligibility based on Participant Registry result status.
+ * Check Certificate Eligibility based on result status.
  */
 export function checkCertificateEligibility(
   resultType: string | null | undefined,
@@ -63,32 +75,47 @@ export function checkCertificateEligibility(
       return {
         eligible: true,
         certificateType: "winner",
-        title: "Certificate of Winner",
+        title: "Winner Certificate",
       };
     case "runner_up":
+    case "runner-up":
       return {
         eligible: true,
         certificateType: "runner_up",
-        title: "Certificate of Merit (Runner-up)",
+        title: "Runner-up Certificate",
       };
     case "finalist":
       return {
         eligible: true,
-        certificateType: "merit",
-        title: "Certificate of Excellence (Finalist)",
+        certificateType: "finalist",
+        title: "Finalist Certificate",
       };
     case "special_mention":
+    case "appreciation":
       return {
         eligible: true,
         certificateType: "appreciation",
-        title: "Certificate of Special Recognition",
+        title: "Appreciation Certificate",
+      };
+    case "achievement":
+      return {
+        eligible: true,
+        certificateType: "achievement",
+        title: "Achievement Certificate",
+      };
+    case "custom":
+      return {
+        eligible: true,
+        certificateType: "custom",
+        title: "Custom Certificate",
       };
     case "participant":
+    case "completed":
       if (allowParticipation) {
         return {
           eligible: true,
           certificateType: "participation",
-          title: "Certificate of Participation",
+          title: "Participation Certificate",
         };
       }
       return {
@@ -117,16 +144,48 @@ export function formatResultLabel(resultType?: string | null): { label: string; 
     case "winner":
       return { label: "Winner", badge: "🏆 Winner", color: "#D97706", bg: "#FEF3C7" };
     case "runner_up":
+    case "runner-up":
       return { label: "Runner-up", badge: "🥈 Runner-up", color: "#475569", bg: "#F1F5F9" };
     case "finalist":
       return { label: "Finalist", badge: "🥉 Finalist", color: "#EA580C", bg: "#FFEDD5" };
     case "special_mention":
+    case "appreciation":
       return { label: "Special Mention", badge: "⭐ Special Mention", color: "#6D28D9", bg: "#F3E8FF" };
+    case "achievement":
+      return { label: "Achievement", badge: "🌟 Achievement", color: "#0D9488", bg: "#CCFBF1" };
     case "participant":
+    case "completed":
       return { label: "Participant", badge: "🎓 Participant", color: "#2563EB", bg: "#EFF6FF" };
     case "pending":
     default:
       return { label: "Pending", badge: "⏳ Pending", color: "#64748B", bg: "#F8FAFC" };
+  }
+}
+
+/**
+ * Format certificate type to clean display label.
+ */
+export function formatCertificateTypeLabel(certType?: string | null): string {
+  const norm = (certType || "participation").toLowerCase().trim();
+  switch (norm) {
+    case "winner":
+      return "Winner Certificate";
+    case "runner_up":
+    case "runner-up":
+      return "Runner-up Certificate";
+    case "finalist":
+    case "merit":
+      return "Finalist Certificate";
+    case "appreciation":
+    case "special_mention":
+      return "Appreciation Certificate";
+    case "achievement":
+      return "Achievement Certificate";
+    case "custom":
+      return "Custom Certificate";
+    case "participation":
+    default:
+      return "Participation Certificate";
   }
 }
 
@@ -143,6 +202,25 @@ export function generateCertificateNumber(year: number = new Date().getFullYear(
  */
 export function generateVerificationToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+/**
+ * Helper to build audit history item
+ */
+export function createAuditHistoryItem(
+  action: "created" | "issued" | "reissued" | "revoked" | "updated",
+  title: string,
+  notes?: string,
+  performed_by: string = "Admin"
+): CertificateHistoryItem {
+  return {
+    id: `hist_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    action,
+    title,
+    timestamp: new Date().toISOString(),
+    performed_by,
+    notes,
+  };
 }
 
 /**
@@ -174,8 +252,7 @@ export function extractCertificateSnapshot(certificateUrl: string): CertificateS
 }
 
 /**
- * Render HTML Certificate from Snapshot & Locked Template Background Image.
- * Overlays exact Canva text elements at their custom X/Y coordinates over the background image.
+ * Render HTML Certificate from Snapshot & Background Image.
  */
 export function renderCertificateHTMLFromSnapshot(snapshot: CertificateSnapshotData): string {
   const bgStyle = snapshot.background_url

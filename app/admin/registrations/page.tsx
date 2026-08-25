@@ -21,16 +21,26 @@ interface AdminRegistration {
   registration_status: string;
   payment_status: string;
   created_at: string;
+  participation_type?: string;
+  team_name?: string;
+  participant_count?: number;
+  id_proof_url?: string;
+  photo_url?: string;
+  video_url?: string;
+  document_urls?: Record<string, string>;
   events?: {
     title?: string;
     venue?: string;
     city?: string;
+    category?: string;
   };
   participants?: {
     full_name?: string;
     email?: string;
     phone?: string;
     city?: string;
+    video_path?: string;
+    video_url?: string;
   };
   event_categories?: {
     name?: string;
@@ -114,6 +124,8 @@ export default function AdminRegistrationsPage() {
       (reg.participants?.email || "").toLowerCase().includes(searchLower) ||
       (reg.participants?.phone || "").toLowerCase().includes(searchLower) ||
       (reg.events?.title || "").toLowerCase().includes(searchLower) ||
+      (reg.participation_type || "").toLowerCase().includes(searchLower) ||
+      (reg.team_name || "").toLowerCase().includes(searchLower) ||
       rzpId.includes(searchLower);
 
     const payStatus = (reg.payment_status || "unpaid").toLowerCase();
@@ -138,12 +150,15 @@ export default function AdminRegistrationsPage() {
   );
 
   const handleDownloadCSV = () => {
-    const headers = "Registration No,Participant Name,Email,Phone,Event,Category,Date,Amount,Payment Status,Razorpay Payment ID,Registration Status\n";
+    const headers = "Registration No,Participant Name,Email,Phone,Event,Category,Participation Type,Team Name,Amount,Payment Status,Registration Status,Razorpay Payment ID,Date\n";
     const rows = filteredRegistrations
       .map((r) => {
         const dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : "";
         const rzpPayId = getRazorpayPaymentId(r);
-        return `"${r.registration_number || r.id}","${r.participants?.full_name || ""}","${r.participants?.email || ""}","${r.participants?.phone || ""}","${r.events?.title || ""}","${r.event_categories?.name || ""}","${dateStr}","₹${r.amount || 0}","${r.payment_status}","${rzpPayId}","${r.registration_status}"`;
+        const cat = r.event_categories?.name || r.events?.category || "General";
+        const partType = r.participation_type || "Solo";
+        const team = r.team_name || "";
+        return `"${r.registration_number || r.id}","${r.participants?.full_name || ""}","${r.participants?.email || ""}","${r.participants?.phone || ""}","${r.events?.title || ""}","${cat}","${partType}","${team}","₹${r.amount || 0}","${r.payment_status}","${r.registration_status}","${rzpPayId}","${dateStr}"`;
       })
       .join("\n");
 
@@ -153,6 +168,67 @@ export default function AdminRegistrationsPage() {
     a.href = url;
     a.download = `registrations_export_${Date.now()}.csv`;
     a.click();
+  };
+
+  const renderUploads = (reg: AdminRegistration) => {
+    const docs = reg.document_urls || {};
+    const photoUrl = reg.photo_url || docs.photo || docs.profile_photo || docs.passportPhoto || docs.passport_photo;
+    const idProofUrl = reg.id_proof_url || docs.idProof || docs.id_proof || docs.idProofUrl || docs.id_proof_url || docs.aadhaar || docs.aadhaar_card || docs.aadhaarFile || docs.identity_proof;
+    const videoUrl = reg.video_url || reg.participants?.video_url || reg.participants?.video_path || docs.danceVideo || docs.dance_video || docs.video || docs.videoUrl;
+
+    const extraKeys = Object.keys(docs).filter(
+      (k) => !["photo", "profile_photo", "passportPhoto", "passport_photo", "danceVideo", "dance_video", "video", "videoUrl", "idProof", "id_proof", "idProofUrl", "id_proof_url", "aadhaar", "aadhaar_card", "aadhaarFile", "identity_proof"].includes(k)
+    );
+
+    if (!photoUrl && !idProofUrl && !videoUrl && extraKeys.length === 0) {
+      return <span style={{ fontSize: 12, color: "#9CA3AF", fontStyle: "italic" }}>Not uploaded</span>;
+    }
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12 }}>
+        <div>
+          <span style={{ fontWeight: 700, color: "#475569" }}>Passport Photo: </span>
+          {photoUrl ? (
+            <a href={photoUrl} target="_blank" rel="noreferrer" style={{ color: "#166534", fontWeight: 800, textDecoration: "underline" }}>
+              View Photo
+            </a>
+          ) : (
+            <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>Not uploaded</span>
+          )}
+        </div>
+
+        <div>
+          <span style={{ fontWeight: 700, color: "#475569" }}>Aadhaar / ID Proof: </span>
+          {idProofUrl ? (
+            <a href={idProofUrl} target="_blank" rel="noreferrer" style={{ color: "#2563EB", fontWeight: 800, textDecoration: "underline" }}>
+              View ID Proof
+            </a>
+          ) : (
+            <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>Not uploaded</span>
+          )}
+        </div>
+
+        <div>
+          <span style={{ fontWeight: 700, color: "#475569" }}>Dance Video: </span>
+          {videoUrl ? (
+            <a href={videoUrl} target="_blank" rel="noreferrer" style={{ color: "#6D28D9", fontWeight: 800, textDecoration: "underline" }}>
+              Play Video
+            </a>
+          ) : (
+            <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>Not uploaded</span>
+          )}
+        </div>
+
+        {extraKeys.map((k) => (
+          <div key={k}>
+            <span style={{ fontWeight: 700, color: "#475569" }}>{k}: </span>
+            <a href={docs[k]} target="_blank" rel="noreferrer" style={{ color: "#475569", fontWeight: 800, textDecoration: "underline" }}>
+              Open
+            </a>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -227,7 +303,7 @@ export default function AdminRegistrationsPage() {
           <Search size={18} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#9CA3AF" }} />
           <input
             type="text"
-            placeholder="Search by Registration #, Name, Email, Phone, Event, or Razorpay Payment ID..."
+            placeholder="Search by Registration #, Name, Email, Phone, Event, Participation Type, Team, or Payment ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -241,7 +317,7 @@ export default function AdminRegistrationsPage() {
           />
         </div>
 
-        {/* Filter Buttons & Dropdown */}
+        {/* Filter Dropdown */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Filter size={16} color="#6B7280" />
           <select
@@ -293,10 +369,11 @@ export default function AdminRegistrationsPage() {
               <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E5E7EB", color: "#4B5563", fontWeight: 700 }}>
                 <th style={{ padding: "14px 20px" }}>REGISTRATION ID</th>
                 <th style={{ padding: "14px 20px" }}>USER</th>
-                <th style={{ padding: "14px 20px" }}>EVENT</th>
+                <th style={{ padding: "14px 20px" }}>EVENT &amp; CATEGORY</th>
+                <th style={{ padding: "14px 20px" }}>PARTICIPATION &amp; TEAM</th>
+                <th style={{ padding: "14px 20px" }}>UPLOADS</th>
                 <th style={{ padding: "14px 20px" }}>AMOUNT</th>
                 <th style={{ padding: "14px 20px" }}>PAYMENT STATUS</th>
-                <th style={{ padding: "14px 20px" }}>RAZORPAY PAYMENT ID</th>
                 <th style={{ padding: "14px 20px" }}>REGISTRATION DATE</th>
                 <th style={{ padding: "14px 20px", textAlign: "right" }}>ACTIONS</th>
               </tr>
@@ -320,6 +397,9 @@ export default function AdminRegistrationsPage() {
                   statusColor = "#6D28D9";
                 }
 
+                const catName = reg.event_categories?.name || reg.events?.category || "General";
+                const partType = reg.participation_type || "Solo";
+
                 return (
                   <tr key={reg.id} style={{ borderBottom: "1px solid #F3F4F6", transition: "background 0.2s" }}>
                     <td style={{ padding: "16px 20px", fontWeight: 800, color: "#6D28D9" }}>
@@ -331,7 +411,22 @@ export default function AdminRegistrationsPage() {
                     </td>
                     <td style={{ padding: "16px 20px" }}>
                       <div style={{ fontWeight: 700, color: "#1F2937" }}>{reg.events?.title || "N/A"}</div>
-                      <div style={{ fontSize: 12, color: "#6B7280" }}>{reg.event_categories?.name || reg.events?.city || ""}</div>
+                      <div style={{ fontSize: 12, color: "#6D28D9", fontWeight: 700, marginTop: 2 }}>
+                        {catName} ({partType})
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px 20px" }}>
+                      <div style={{ fontWeight: 800, color: "#111827" }}>{partType}</div>
+                      {reg.team_name ? (
+                        <div style={{ fontSize: 12, color: "#4C1D95", fontWeight: 700, marginTop: 2 }}>
+                          Team: {reg.team_name}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: "#9CA3AF" }}>Individual</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "16px 20px" }}>
+                      {renderUploads(reg)}
                     </td>
                     <td style={{ padding: "16px 20px", fontWeight: 800, color: "#111827" }}>
                       ₹{reg.amount || 0}
@@ -350,9 +445,6 @@ export default function AdminRegistrationsPage() {
                       >
                         {payStatus}
                       </span>
-                    </td>
-                    <td style={{ padding: "16px 20px", fontFamily: "monospace", fontSize: 12, color: rzpPayId !== "-" ? "#6D28D9" : "#9CA3AF", fontWeight: 700 }}>
-                      {rzpPayId}
                     </td>
                     <td style={{ padding: "16px 20px", color: "#4B5563" }}>{dateStr}</td>
                     <td style={{ padding: "16px 20px", textAlign: "right" }}>
@@ -388,7 +480,7 @@ export default function AdminRegistrationsPage() {
       {/* Modal for Details */}
       {selectedReg && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
-          <div style={{ background: "#fff", borderRadius: 20, maxWidth: 560, width: "100%", padding: "28px 32px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
+          <div style={{ background: "#fff", borderRadius: 20, maxWidth: 620, width: "100%", padding: "28px 32px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" }}>
             <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: "#111827" }}>
               Registration #{selectedReg.registration_number}
             </h3>
@@ -397,6 +489,14 @@ export default function AdminRegistrationsPage() {
               <div><strong>Email:</strong> {selectedReg.participants?.email || "N/A"}</div>
               <div><strong>Phone:</strong> {selectedReg.participants?.phone || "N/A"}</div>
               <div><strong>Event:</strong> {selectedReg.events?.title || "N/A"}</div>
+              <div><strong>Category:</strong> {selectedReg.event_categories?.name || selectedReg.events?.category || "General"}</div>
+              <div><strong>Participation Type:</strong> <span style={{ fontWeight: 800, color: "#6D28D9" }}>{selectedReg.participation_type || "Solo"}</span></div>
+              <div><strong>Team Name:</strong> {selectedReg.team_name || "N/A"}</div>
+              <div><strong>Performers Count:</strong> {selectedReg.participant_count || 1}</div>
+              <div><strong>Uploaded Files:</strong></div>
+              <div style={{ padding: "10px 14px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0" }}>
+                {renderUploads(selectedReg)}
+              </div>
               <div><strong>Amount Fee:</strong> ₹{selectedReg.amount}</div>
               <div><strong>Payment Status:</strong> <span style={{ textTransform: "uppercase", fontWeight: 800, color: selectedReg.payment_status === "paid" ? "#166534" : "#991B1B" }}>{selectedReg.payment_status || "unpaid"}</span></div>
               <div><strong>Registration Status:</strong> {selectedReg.registration_status}</div>

@@ -199,7 +199,12 @@ export async function GET(request: Request) {
           }
         }
 
-        const docUrlsObj = reg.document_urls || parsedNotes.docUrls || {};
+        const docUrlsObj = {
+          ...(reg.document_urls || {}),
+          ...(parsedNotes.docUrls || {}),
+          ...(parsedNotes.documentUrls || {}),
+        };
+
         const docVideo =
           pDocs["dance_video"] ||
           pDocs["video"] ||
@@ -213,7 +218,38 @@ export async function GET(request: Request) {
         const rawVideoRef = p.video_path || p.video_url || docVideo || null;
         const signedVideoUrl = await resolveStorageSignedUrl(supabase, rawVideoRef);
 
-        const rawIdProofRef = pDocs["id_proof"] || parsedNotes.idProofPath || parsedNotes.aadhaarFile || null;
+        const rawIdProofRef =
+          (reg as any).id_proof_url ||
+          p.id_proof_url ||
+          (p as any).id_proof ||
+          pDocs["id_proof"] ||
+          pDocs["idProof"] ||
+          pDocs["aadhaar"] ||
+          docUrlsObj.idProof ||
+          docUrlsObj.id_proof ||
+          docUrlsObj.idProofUrl ||
+          docUrlsObj.id_proof_url ||
+          docUrlsObj.aadhaar ||
+          docUrlsObj.aadhaar_card ||
+          docUrlsObj.aadhaarFile ||
+          docUrlsObj.identity_proof ||
+          parsedNotes.idProof ||
+          parsedNotes.id_proof ||
+          parsedNotes.idProofPath ||
+          parsedNotes.id_proof_url ||
+          parsedNotes.idProofUrl ||
+          parsedNotes.aadhaarFile ||
+          parsedNotes.aadhaar ||
+          parsedNotes.aadhaar_card ||
+          null;
+
+        const signedIdProofUrl = await resolveStorageSignedUrl(supabase, rawIdProofRef);
+        const finalIdProofUrl = signedIdProofUrl || rawIdProofRef;
+
+        if (finalIdProofUrl) {
+          if (!docUrlsObj.idProof) docUrlsObj.idProof = finalIdProofUrl;
+          if (!docUrlsObj.id_proof) docUrlsObj.id_proof = finalIdProofUrl;
+        }
 
         // Fetch result object (either from event_results table or parsed from notes)
         const assignedResult =
@@ -252,12 +288,15 @@ export async function GET(request: Request) {
           event_slug: evt?.slug || reg.event_id,
           event_date: evt?.event_date || null,
           event_location: evt?.venue || evt?.city || null,
-          category_name: cat?.name || parsedNotes.compType || "General",
+          category_name: cat?.name || evt?.category || "General",
 
           video_path: rawVideoRef,
           video_url: signedVideoUrl || rawVideoRef,
           video_signed_url: signedVideoUrl || rawVideoRef,
-          id_proof_url: rawIdProofRef,
+          id_proof_url: finalIdProofUrl,
+          document_urls: docUrlsObj,
+          participation_type: (reg as any).participation_type || parsedNotes.participationType || parsedNotes.participation_type || parsedNotes.compType || "Solo",
+          team_name: (reg as any).team_name || parsedNotes.teamInfo?.teamName || parsedNotes.teamName || null,
 
           // Assigned Result
           result: {
@@ -272,15 +311,17 @@ export async function GET(request: Request) {
             parentName: parsedNotes.parentName || null,
             whatsapp: parsedNotes.whatsapp || p.phone,
             age: parsedNotes.age || null,
-            compType: parsedNotes.compType || "Solo",
+            compType: (reg as any).participation_type || parsedNotes.participationType || parsedNotes.participation_type || parsedNotes.compType || "Solo",
+            participationType: (reg as any).participation_type || parsedNotes.participationType || parsedNotes.participation_type || parsedNotes.compType || "Solo",
             ageCat: parsedNotes.ageCat || null,
             danceStyle: parsedNotes.danceStyle || null,
-            teamName: parsedNotes.teamName || null,
-            numParticipants: parsedNotes.numParticipants || "1",
+            teamName: (reg as any).team_name || parsedNotes.teamInfo?.teamName || parsedNotes.teamName || null,
+            numParticipants: (reg as any).participant_count || parsedNotes.numParticipants || "1",
             songTitle: parsedNotes.songTitle || null,
             duration: parsedNotes.duration || null,
             academy: parsedNotes.academy || null,
             awards: parsedNotes.awards || null,
+            docUrls: docUrlsObj,
             emergencyName: p.emergency_contact_name || parsedNotes.emergencyName || null,
             emergencyRelation: p.emergency_contact_relation || parsedNotes.emergencyRelation || null,
             emergencyMobile: p.emergency_contact_phone || parsedNotes.emergencyMobile || null,

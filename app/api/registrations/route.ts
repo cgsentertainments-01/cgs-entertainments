@@ -584,6 +584,51 @@ export async function POST(request: Request) {
   }
 }
 
+async function resolveStorageSignedUrl(supabase: any, rawPathOrUrl: string | null): Promise<string | null> {
+  if (!rawPathOrUrl || typeof rawPathOrUrl !== "string") return null;
+  const trimmed = rawPathOrUrl.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes("youtube.com") || trimmed.includes("youtu.be") || trimmed.includes("vimeo.com") || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
+    return trimmed;
+  }
+
+  let cleanPath = trimmed;
+  let bucket = "participant-documents";
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    const storageMatch = trimmed.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/);
+    if (storageMatch) {
+      bucket = storageMatch[1];
+      cleanPath = storageMatch[2].split("?")[0];
+    } else {
+      return trimmed;
+    }
+  }
+
+  cleanPath = cleanPath.replace(/^\/+/, "");
+  if (cleanPath.startsWith("dance-videos/")) {
+    bucket = "dance-videos";
+    cleanPath = cleanPath.replace(/^dance-videos\//, "");
+  } else if (cleanPath.startsWith("participant-documents/")) {
+    bucket = "participant-documents";
+    cleanPath = cleanPath.replace(/^participant-documents\//, "");
+  } else if (cleanPath.endsWith(".mp4") || cleanPath.endsWith(".mov") || cleanPath.endsWith(".avi") || cleanPath.endsWith(".webm") || cleanPath.includes("videos/")) {
+    bucket = "dance-videos";
+  }
+
+  try {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(cleanPath, 86400);
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+    const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(cleanPath);
+    return pubData?.publicUrl || trimmed;
+  } catch (e) {
+    return trimmed;
+  }
+}
+
 export async function GET(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -662,10 +707,124 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    const formattedRegistrations = await Promise.all(
+      (registrations || []).map(async (reg: any) => {
+        let parsedNotes: any = {};
+        if (reg.notes) {
+          try {
+            parsedNotes = typeof reg.notes === "string" ? JSON.parse(reg.notes) : reg.notes;
+          } catch {
+            parsedNotes = {};
+          }
+        }
+
+        const resolvedParticipationType =
+          reg.participation_type ||
+          parsedNotes.participationType ||
+          parsedNotes.participation_type ||
+          parsedNotes.compType ||
+          "Solo";
+
+        const resolvedTeamName =
+          reg.team_name ||
+          parsedNotes.teamInfo?.teamName ||
+          parsedNotes.teamName ||
+          null;
+
+        const rawDocumentUrls = {
+          ...(reg.document_urls || {}),
+          ...(parsedNotes.docUrls || {}),
+          ...(parsedNotes.documentUrls || {}),
+        };
+
+        const rawIdProofUrl =
+          reg.id_proof_url ||
+          reg.participants?.id_proof_url ||
+          reg.participants?.id_proof ||
+          rawDocumentUrls.idProof ||
+          rawDocumentUrls.id_proof ||
+          rawDocumentUrls.idProofUrl ||
+          rawDocumentUrls.id_proof_url ||
+          rawDocumentUrls.aadhaar ||
+          rawDocumentUrls.aadhaar_card ||
+          rawDocumentUrls.aadhaarFile ||
+          rawDocumentUrls.identity_proof ||
+          parsedNotes.idProof ||
+          parsedNotes.id_proof ||
+          parsedNotes.idProofPath ||
+          parsedNotes.id_proof_url ||
+          parsedNotes.idProofUrl ||
+          parsedNotes.aadhaarFile ||
+          parsedNotes.aadhaar ||
+          parsedNotes.aadhaar_card ||
+          null;
+
+        const rawPhotoUrl =
+          rawDocumentUrls.photo ||
+          rawDocumentUrls.profile_photo ||
+          rawDocumentUrls.passportPhoto ||
+          rawDocumentUrls.passport_photo ||
+          parsedNotes.photo ||
+          parsedNotes.passportPhoto ||
+          parsedNotes.photoUrl ||
+          reg.participants?.photo_url ||
+          null;
+
+        const rawVideoUrl =
+          reg.participants?.video_url ||
+          reg.participants?.video_path ||
+          rawDocumentUrls.danceVideo ||
+          rawDocumentUrls.dance_video ||
+          rawDocumentUrls.performanceVideo ||
+          rawDocumentUrls.video ||
+          parsedNotes.videoUrl ||
+          parsedNotes.videoPath ||
+          null;
+
+        const signedIdProofUrl = await resolveStorageSignedUrl(supabase, rawIdProofUrl);
+        const signedPhotoUrl = await resolveStorageSignedUrl(supabase, rawPhotoUrl);
+        const signedVideoUrl = await resolveStorageSignedUrl(supabase, rawVideoUrl);
+
+        const resolvedDocumentUrls: Record<string, string> = {};
+        for (const k of Object.keys(rawDocumentUrls)) {
+          const val = rawDocumentUrls[k];
+          if (typeof val === "string" && val.trim()) {
+            resolvedDocumentUrls[k] = (await resolveStorageSignedUrl(supabase, val)) || val;
+          }
+        }
+
+        if (signedIdProofUrl) {
+          resolvedDocumentUrls.idProof = signedIdProofUrl;
+          resolvedDocumentUrls.id_proof = signedIdProofUrl;
+        }
+        if (signedPhotoUrl) {
+          resolvedDocumentUrls.photo = signedPhotoUrl;
+          resolvedDocumentUrls.passportPhoto = signedPhotoUrl;
+        }
+        if (signedVideoUrl) {
+          resolvedDocumentUrls.danceVideo = signedVideoUrl;
+          resolvedDocumentUrls.video = signedVideoUrl;
+        }
+
+        return {
+          ...reg,
+          participation_type: resolvedParticipationType,
+          team_name: resolvedTeamName,
+          participant_count: reg.participant_count || parsedNotes.numParticipants || 1,
+          document_urls: resolvedDocumentUrls,
+          id_proof_url: signedIdProofUrl || rawIdProofUrl,
+          photo_url: signedPhotoUrl || rawPhotoUrl,
+          video_url: signedVideoUrl || rawVideoUrl,
+          custom_fields: reg.custom_fields || parsedNotes.customFields || {},
+          additional_participants: reg.additional_participants || parsedNotes.additionalParticipants || [],
+        };
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      registrations: registrations || [],
-      total: count !== null ? count : (registrations ? registrations.length : 0),
+      registrations: formattedRegistrations,
+      total: count !== null ? count : (formattedRegistrations ? formattedRegistrations.length : 0),
       page: pageParam || 1,
       totalPages: limitParam > 0 && count ? Math.ceil(count / limitParam) : 1,
     });

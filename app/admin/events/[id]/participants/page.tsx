@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import {
   Trophy,
   Users,
@@ -27,8 +27,10 @@ import {
   Play,
   FileText,
   Megaphone,
+  Layers,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { CompetitionRoundsManager } from "@/components/admin/CompetitionRoundsManager";
 
 interface EventDetail {
   id: string;
@@ -75,13 +77,9 @@ const RESULT_OPTIONS = [
   { value: "pending", label: "No Result / Pending", badge: "⏳ Pending", color: "#64748B", bg: "#F8FAFC", pos: 99 },
 ];
 
-export default function AdminEventParticipantsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const resolvedParams = use(params);
-  const eventId = resolvedParams.id;
+export default function AdminEventParticipantsPage() {
+  const routeParams = useParams();
+  const eventId = (routeParams?.id as string) || "";
   const router = useRouter();
 
   const [eventData, setEventData] = useState<EventDetail | null>(null);
@@ -89,6 +87,7 @@ export default function AdminEventParticipantsPage({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
+  const [mainTab, setMainTab] = useState<"rounds" | "registrations">("rounds");
 
   // Modals state
   const [videoModal, setVideoModal] = useState<{ url: string; title: string } | null>(null);
@@ -398,9 +397,58 @@ export default function AdminEventParticipantsPage({
             </button>
           </div>
         </div>
+
+        {/* Navigation Tabs */}
+        <div style={{ display: "flex", gap: 12, marginTop: 24, borderBottom: "2px solid #E2E8F0" }}>
+          <button
+            type="button"
+            onClick={() => setMainTab("rounds")}
+            style={{
+              padding: "12px 24px",
+              fontSize: 14.5,
+              fontWeight: 900,
+              color: mainTab === "rounds" ? "#6D28D9" : "#64748B",
+              borderBottom: mainTab === "rounds" ? "3px solid #6D28D9" : "3px solid transparent",
+              background: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderTop: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Layers size={18} /> Competition Rounds & Promotion
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainTab("registrations")}
+            style={{
+              padding: "12px 24px",
+              fontSize: 14.5,
+              fontWeight: 900,
+              color: mainTab === "registrations" ? "#6D28D9" : "#64748B",
+              borderBottom: mainTab === "registrations" ? "3px solid #6D28D9" : "3px solid transparent",
+              background: "none",
+              borderLeft: "none",
+              borderRight: "none",
+              borderTop: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Users size={18} /> All Event Registrations
+          </button>
+        </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {mainTab === "rounds" ? (
+        <CompetitionRoundsManager eventId={eventId} eventTitle={eventData?.title} />
+      ) : (
+        <>
       <div
         style={{
           background: "#ffffff",
@@ -522,29 +570,39 @@ export default function AdminEventParticipantsPage({
 
                     {/* Performance / Video */}
                     <td style={{ padding: "14px 18px" }}>
-                      {videoTarget ? (
-                        <button
-                          type="button"
-                          onClick={() => setVideoModal({ url: videoTarget, title: `${p.full_name} Audition` })}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: "6px 12px",
-                            background: "#F3E8FF",
-                            color: "#6D28D9",
-                            border: "1px solid #DDD6FE",
-                            borderRadius: 8,
-                            fontSize: 12,
-                            fontWeight: 800,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Play size={13} fill="#6D28D9" /> Watch Video
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>No Video Uploaded</span>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#6D28D9" }}>
+                        {p.details?.participationType || p.details?.compType || "Solo"}
+                      </div>
+                      {p.details?.teamName && (
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginTop: 2 }}>
+                          Team: {p.details.teamName}
+                        </div>
                       )}
+                      <div style={{ marginTop: 6 }}>
+                        {videoTarget ? (
+                          <button
+                            type="button"
+                            onClick={() => setVideoModal({ url: videoTarget, title: `${p.full_name} Audition` })}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "4px 10px",
+                              background: "#F3E8FF",
+                              color: "#6D28D9",
+                              border: "1px solid #DDD6FE",
+                              borderRadius: 8,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <Play size={12} fill="#6D28D9" /> Watch Video
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>No Video Uploaded</span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Result Status */}
@@ -647,6 +705,8 @@ export default function AdminEventParticipantsPage({
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
 
       {/* ── RESULT SELECTION MODAL ── */}

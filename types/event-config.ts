@@ -69,6 +69,8 @@ export interface EventFormConfig {
   participationTypes: ParticipationTypeConfig[];
   teamSettings: TeamSettingsConfig;
   documents: DocumentConfig[];
+  competitions?: any[];
+  feeStructure?: Record<string, any>;
 }
 
 /**

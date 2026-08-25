@@ -1,4 +1,5 @@
 export * from "./banner";
+export * from "./competition-round";
 
 
 export interface Category {

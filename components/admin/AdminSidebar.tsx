@@ -6,16 +6,13 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Calendar,
-  Image as ImageIcon,
   Users,
-  CreditCard,
+  Trophy,
   Award,
-  BarChart3,
+  Bell,
   Settings,
-  Globe,
-  Crown,
   X,
-  UserCheck,
+  Crown,
 } from "lucide-react";
 
 interface AdminSidebarProps {
@@ -29,15 +26,11 @@ export function AdminSidebar({ mobileOpen = false, onCloseMobile }: AdminSidebar
   const navItems = [
     { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { label: "Events", href: "/admin/events", icon: Calendar },
-    { label: "Banner", href: "/admin/banner", icon: ImageIcon },
-    { label: "Guests & Judges", href: "/admin/guests-judges", icon: UserCheck },
-    { label: "Categories", href: "/admin/categories", icon: Globe },
     { label: "Participants", href: "/admin/participants", icon: Users },
-    { label: "Payments", href: "/admin/payments", icon: CreditCard },
+    { label: "Results", href: "/admin/results", icon: Trophy },
     { label: "Certificates", href: "/admin/certificates", icon: Award },
-    { label: "Reports", href: "/admin/reports", icon: BarChart3 },
+    { label: "Notifications", href: "/admin/notifications", icon: Bell },
     { label: "Settings", href: "/admin/settings", icon: Settings },
-    { label: "Website Settings", href: "/admin/website-settings", icon: Globe },
   ];
 
   const sidebarContent = (

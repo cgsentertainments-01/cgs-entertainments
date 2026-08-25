@@ -29,6 +29,9 @@ interface RegistrationRecord {
   payment_status: string;
   amount: number;
   registration_date: string;
+  participation_type?: string;
+  team_name?: string;
+  notes?: string | any;
   event: {
     id: string;
     title: string;
@@ -37,6 +40,7 @@ interface RegistrationRecord {
     venue?: string;
     city?: string;
     address?: string;
+    category?: string;
   } | null;
   category: { name: string } | null;
 }
@@ -150,7 +154,7 @@ export default function MyRegistrationsPage() {
       }
 
       // Step 2: fetch registrations for this participant, joining events & categories
-      const { data: regData, error: regError } = await supabase
+      let query = supabase
         .from("registrations")
         .select(`
           id,
@@ -159,6 +163,9 @@ export default function MyRegistrationsPage() {
           payment_status,
           amount,
           registration_date,
+          participation_type,
+          team_name,
+          notes,
           event:events (
             id,
             title,
@@ -166,7 +173,8 @@ export default function MyRegistrationsPage() {
             event_date,
             venue,
             city,
-            address
+            address,
+            category
           ),
           category:event_categories (
             name
@@ -174,6 +182,39 @@ export default function MyRegistrationsPage() {
         `)
         .eq("participant_id", participantData.id)
         .order("registration_date", { ascending: false });
+
+      let { data: regData, error: regError } = await query;
+
+      if (regError && (regError.message.includes("column") || regError.message.includes("schema cache"))) {
+        const { data: fbData, error: fbErr } = await supabase
+          .from("registrations")
+          .select(`
+            id,
+            registration_number,
+            registration_status,
+            payment_status,
+            amount,
+            registration_date,
+            notes,
+            event:events (
+              id,
+              title,
+              slug,
+              event_date,
+              venue,
+              city,
+              address,
+              category
+            ),
+            category:event_categories (
+              name
+            )
+          `)
+          .eq("participant_id", participantData.id)
+          .order("registration_date", { ascending: false });
+        regData = fbData as any;
+        regError = fbErr;
+      }
 
       if (regError) {
         console.error("Error fetching registrations:", regError.message);
@@ -378,12 +419,24 @@ export default function MyRegistrationsPage() {
               const badge = statusBadge(reg.registration_status);
               const eventTitle = reg.event?.title || "Untitled Event";
               const eventSlug = reg.event?.slug || reg.event?.id || "";
-              const categoryName = reg.category?.name || "Event";
+              const categoryName = reg.category?.name || reg.event?.category || "General";
               const eventDate = reg.event?.event_date;
               const venue =
                 reg.event?.venue && reg.event?.city
                   ? `${reg.event.venue}, ${reg.event.city}`
                   : reg.event?.city || reg.event?.venue || "Venue TBA";
+
+              let parsedNotes: any = {};
+              if (reg.notes) {
+                try {
+                  parsedNotes = typeof reg.notes === "string" ? JSON.parse(reg.notes) : reg.notes;
+                } catch {
+                  parsedNotes = {};
+                }
+              }
+
+              const partType = reg.participation_type || parsedNotes.participationType || parsedNotes.participation_type || parsedNotes.compType || "Solo";
+              const teamName = reg.team_name || parsedNotes.teamInfo?.teamName || parsedNotes.teamName;
 
               return (
                 <div
@@ -393,7 +446,6 @@ export default function MyRegistrationsPage() {
                     borderRadius: 20,
                     border: "1.5px solid #E2E8F0",
                     padding: "24px 28px",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -425,8 +477,22 @@ export default function MyRegistrationsPage() {
                           textTransform: "uppercase",
                         }}
                       >
-                        {categoryName}
+                        {categoryName} ({partType})
                       </span>
+                      {teamName && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            background: "#F3E8FF",
+                            color: "#6D28D9",
+                            padding: "3px 10px",
+                            borderRadius: 8,
+                          }}
+                        >
+                          Team: {teamName}
+                        </span>
+                      )}
                       <span
                         style={{
                           fontSize: 12,
