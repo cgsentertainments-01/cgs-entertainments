@@ -63,6 +63,7 @@ export interface DBEvent {
   homepage_settings?: any;
   form_config?: EventFormConfig;
   status: string;
+  event_type?: 'published' | 'upcoming';
   is_featured?: boolean;
   is_published: boolean;
   created_at?: string;

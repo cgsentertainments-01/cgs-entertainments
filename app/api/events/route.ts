@@ -8,6 +8,7 @@ import {
   revalidateEventCaches,
 } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
+import { isUpcomingEvent, isPublishedEvent } from "@/lib/event-lifecycle";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createAdminNotification } from "@/lib/notifications";
@@ -60,7 +61,10 @@ async function getOrCreateCategoryId(categoryName: string): Promise<string | nul
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const isUpcomingParam = searchParams.get("upcoming") === "true";
+  const typeParam = searchParams.get("type");
+  const isUpcomingParam = searchParams.get("upcoming") === "true" || typeParam === "upcoming";
+  const isPublishedParam = typeParam === "published";
+  const isCompletedParam = searchParams.get("completed") === "true";
   const isAllParam = searchParams.get("all") === "true";
   const slugParam = searchParams.get("slug") || searchParams.get("id") || searchParams.get("identifier");
   const limitParam = parseInt(searchParams.get("limit") || "8", 10);
@@ -185,14 +189,9 @@ function isValidUUID(uuid?: string | null): boolean {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // Filter upcoming events if requested
+    // Filter upcoming/public events if requested
     if (isUpcomingParam) {
-      allEventsList = allEventsList.filter((evt) => {
-        if (evt.is_published === false) return false;
-        const statusUpper = String(evt.status || "").toUpperCase();
-        if (statusUpper === "CANCELLED" || statusUpper === "COMPLETED" || statusUpper === "DRAFT" || statusUpper === "REGISTRATION_CLOSED") return false;
-        return true;
-      });
+      allEventsList = allEventsList.filter((evt) => isUpcomingEvent(evt));
 
       allEventsList.sort((a, b) => {
         const dA = new Date(a.rawDate || a.date || "").getTime() || 0;
@@ -203,7 +202,29 @@ function isValidUUID(uuid?: string | null): boolean {
       if (limitParam && limitParam > 0) {
         allEventsList = allEventsList.slice(0, limitParam);
       }
-    } else if (isAllParam) {
+    } else if (isCompletedParam) {
+      allEventsList = allEventsList.filter((evt) => {
+        if (evt.is_published === false) return false;
+        const statusUpper = String(evt.lifecycle?.status || evt.status || "").toUpperCase();
+        return statusUpper === "COMPLETED";
+      });
+
+      allEventsList.sort((a, b) => {
+        const dA = new Date(a.rawDate || a.date || "").getTime() || 0;
+        const dB = new Date(b.rawDate || b.date || "").getTime() || 0;
+        return dB - dA;
+      });
+    } else if (isPublishedParam || !isAllParam) {
+      // Default public events section & type=published: ONLY active published-lifecycle events
+      allEventsList = allEventsList.filter((evt) => isPublishedEvent(evt));
+
+      allEventsList.sort((a, b) => {
+        const dA = new Date(a.rawDate || a.date || "").getTime() || 0;
+        const dB = new Date(b.rawDate || b.date || "").getTime() || 0;
+        return dB - dA;
+      });
+    } else {
+      // Admin request (all=true): sort all events
       allEventsList.sort((a, b) => {
         const dA = new Date(a.rawDate || a.date || "").getTime() || 0;
         const dB = new Date(b.rawDate || b.date || "").getTime() || 0;
@@ -316,6 +337,7 @@ export async function POST(request: Request) {
       homepage_settings,
       form_config,
       status,
+      event_type,
       is_featured,
       is_published,
     } = body;
@@ -323,6 +345,8 @@ export async function POST(request: Request) {
     if (!title || !title.trim()) {
       return NextResponse.json({ error: "Event Title is required." }, { status: 400 });
     }
+
+    const reqEventType = (event_type || (status === "upcoming" ? "upcoming" : "published")) === "upcoming" ? "upcoming" : "published";
 
     // ALWAYS generate a new unique UUID for CREATE operations!
     const eventId = crypto.randomUUID();
@@ -409,12 +433,14 @@ export async function POST(request: Request) {
       homepage_settings: homepage_settings || { show_on_homepage: true, is_featured: Boolean(is_featured) },
       form_config: form_config || undefined,
       status: normStatus,
+      event_type: reqEventType,
       is_featured: Boolean(is_featured),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
     };
 
     const baseFormConfig = typeof form_config === "object" && form_config !== null ? { ...form_config } : {};
     baseFormConfig.extra = {
+      event_type: reqEventType,
       schedule: schedule || [],
       judges: judges || [],
       contact_info: contact_info || {},
@@ -463,45 +489,54 @@ export async function POST(request: Request) {
       registration_fee: newEvent.registration_fee,
       max_participants: newEvent.max_participants,
       status: newEvent.status,
+      event_type: reqEventType,
       is_featured: newEvent.is_featured,
       is_published: newEvent.is_published,
       terms_conditions: newEvent.terms_conditions,
       rules_regulations: newEvent.rules_regulations,
-      min_age: newEvent.min_age,
-      max_age: newEvent.max_age,
-      registration_type: newEvent.registration_type,
-      max_team_size: newEvent.max_team_size,
-      allow_multiple_categories: newEvent.allow_multiple_categories,
-      registration_form_type: newEvent.registration_form_type,
-      participation_categories: newEvent.participation_categories,
-      dance_styles: newEvent.dance_styles,
-      required_documents: newEvent.required_documents,
-      payment_required: newEvent.payment_required,
-      currency: newEvent.currency,
-      refund_policy: newEvent.refund_policy,
-      schedule: newEvent.schedule,
-      judges: newEvent.judges,
-      contact_info: newEvent.contact_info,
-      seo: newEvent.seo,
-      homepage_settings: newEvent.homepage_settings,
       form_config: baseFormConfig,
     };
 
     if (resolvedCategoryId) payloadToInsert.category_id = resolvedCategoryId;
 
-    // CRITICAL: Always perform INSERT (never UPSERT) for new event creation!
-    if (supabase) {
-      try {
-        const { error: sbErr } = await supabase
-          .from("events")
-          .insert([payloadToInsert]);
+    // CRITICAL: Always perform INSERT in Supabase and fail loudly if DB error occurs!
+    const dbClient = getSupabaseAdmin() || supabase;
+    if (dbClient) {
+      let { error: sbErr } = await dbClient
+        .from("events")
+        .insert([payloadToInsert]);
 
-        if (sbErr) {
-          console.error("Supabase events insert error:", sbErr);
-        }
-      } catch (sbErr) {
-        console.warn("Supabase insert exception:", sbErr);
+      // If optional column is missing in DB schema cache, retry insert without optional columns
+      if (sbErr && (sbErr.code === "42703" || sbErr.message?.includes("column") || sbErr.message?.includes("rules_regulations") || sbErr.message?.includes("mobile_banner_image") || sbErr.message?.includes("event_type"))) {
+        console.warn(`Notice: Column missing in DB table (${sbErr.message}). Retrying insert with sanitized payload.`);
+        const fallbackPayload = { ...payloadToInsert };
+        delete fallbackPayload.mobile_banner_image;
+        delete fallbackPayload.event_type;
+        delete fallbackPayload.rules_regulations;
+        delete fallbackPayload.terms_conditions;
+        const retryRes = await dbClient.from("events").insert([fallbackPayload]);
+        sbErr = retryRes.error;
       }
+
+      if (sbErr) {
+        console.error("❌ Supabase events insert error:", sbErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Database Save Error: ${sbErr.message || "Failed to save event to Supabase."}`,
+            details: sbErr,
+          },
+          { status: 500 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database Connection Error: Supabase client is not available.",
+        },
+        { status: 500 }
+      );
     }
 
     insertInStore(newEvent);
@@ -561,6 +596,8 @@ export async function DELETE(request: Request) {
 
     const eventUUID = eventRow.id;
 
+    const forceDelete = searchParams.get("force") === "true";
+
     // 2. Check foreign key relationship: registrations table
     const { count: regCount, error: regCountErr } = await supabase
       .from("registrations")
@@ -571,17 +608,39 @@ export async function DELETE(request: Request) {
       console.warn("Notice checking registrations count before event delete:", regCountErr.message);
     }
 
-    if (regCount && regCount > 0) {
+    if (regCount && regCount > 0 && !forceDelete) {
       console.warn(`[DELETE BLOCKED] Event '${eventRow.title}' (${eventUUID}) has ${regCount} existing registration(s).`);
       return NextResponse.json(
         {
           success: false,
           hasRegistrations: true,
           count: regCount,
-          error: `This event has ${regCount} existing registration(s) and cannot be permanently deleted. You can deactivate/archive it instead.`,
+          error: `This event has ${regCount} existing registration(s). Pass force=true to permanently delete the event and its associated records.`,
         },
         { status: 409 }
       );
+    }
+
+    if (forceDelete) {
+      // Cascading cleanup of foreign key dependencies for this event
+      try {
+        await supabase.from("certificates").delete().eq("event_id", eventUUID);
+        await supabase.from("event_results").delete().eq("event_id", eventUUID);
+        await supabase.from("competition_rounds").delete().eq("event_id", eventUUID);
+        
+        const { data: eventRegs } = await supabase
+          .from("registrations")
+          .select("id")
+          .eq("event_id", eventUUID);
+          
+        if (eventRegs && eventRegs.length > 0) {
+          const regIds = eventRegs.map((r) => r.id);
+          await supabase.from("registration_payments").delete().in("registration_id", regIds);
+          await supabase.from("registrations").delete().eq("event_id", eventUUID);
+        }
+      } catch (cleanupErr: any) {
+        console.warn("Notice during cascading event delete cleanup:", cleanupErr.message);
+      }
     }
 
     console.log("DELETE EVENT ID:", eventUUID);

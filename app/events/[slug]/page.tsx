@@ -24,6 +24,7 @@ import {
   Instagram,
   Youtube,
 } from "lucide-react";
+import { getEventLifecycleStatus, LifecycleInfo, isUpcomingEvent } from "@/lib/event-lifecycle";
 
 /* ─── GUESTS & JUDGES DATA ─── */
 const GUESTS_AND_JUDGES = [
@@ -168,13 +169,14 @@ function HighlightCard({ icon, label, value }: { icon: React.ReactNode; label: s
 }
 
 /* ─── HOVER COMPONENT: Sidebar White Register Button ─── */
-function SidebarRegisterBtn({ href }: { href: string }) {
+function SidebarRegisterBtn({ href, lifecycle }: { href: string; lifecycle: LifecycleInfo }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [h, setH] = useState(false);
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (!lifecycle.ctaEnabled) return;
     if (loading) return;
 
     if (!user) {
@@ -198,19 +200,22 @@ function SidebarRegisterBtn({ href }: { href: string }) {
         width: "100%",
         padding: "14px 24px",
         borderRadius: 14,
-        background: "#fff",
-        color: "#6D28D9",
+        background: lifecycle.ctaEnabled ? "#fff" : "rgba(255,255,255,0.2)",
+        color: lifecycle.ctaEnabled ? "#6D28D9" : "#DDD6FE",
         textDecoration: "none",
         fontSize: 15,
         fontWeight: 900,
-        boxShadow: h ? "0 8px 24px rgba(0,0,0,0.25)" : "0 4px 14px rgba(0,0,0,0.12)",
+        boxShadow: lifecycle.ctaEnabled ? (h ? "0 8px 24px rgba(0,0,0,0.25)" : "0 4px 14px rgba(0,0,0,0.12)") : "none",
         transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        transform: h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
-        cursor: "pointer",
+        transform: lifecycle.ctaEnabled && h ? "translateY(-3px) scale(1.02)" : "translateY(0) scale(1)",
+        cursor: lifecycle.ctaEnabled ? "pointer" : "not-allowed",
+        opacity: lifecycle.ctaEnabled ? 1 : 0.8,
       }}
     >
-      Register Now
-      <ChevronRight size={18} style={{ transform: h ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
+      {lifecycle.ctaText}
+      {lifecycle.ctaEnabled && (
+        <ChevronRight size={18} style={{ transform: h ? "translateX(4px)" : "translateX(0)", transition: "transform 0.2s" }} />
+      )}
     </a>
   );
 }
@@ -351,7 +356,9 @@ export default function EventDetailPage() {
     );
   }
 
-  const feeDisplay = typeof evt.registrationFee === "number" ? `₹${evt.registrationFee}` : evt.registrationFee || "₹0";
+  const lc: LifecycleInfo = evt.lifecycle || getEventLifecycleStatus(evt);
+  const isUpcoming = isUpcomingEvent(evt) || lc.status === "COMING_SOON";
+  const feeDisplay = isUpcoming ? "Coming Soon" : (typeof evt.registrationFee === "number" ? `₹${evt.registrationFee}` : evt.registrationFee || "₹0");
 
   return (
     <div style={{ minHeight: "100vh", background: "#F9FAFB" }}>
@@ -392,6 +399,22 @@ export default function EventDetailPage() {
               }}
             >
               {evt.badge || evt.category || "EVENT"}
+            </span>
+
+            <span
+              style={{
+                padding: "6px 14px",
+                borderRadius: 8,
+                background: (evt.lifecycle || getEventLifecycleStatus(evt)).badgeBg,
+                color: (evt.lifecycle || getEventLifecycleStatus(evt)).badgeColor,
+                border: `1px solid ${(evt.lifecycle || getEventLifecycleStatus(evt)).badgeBorder}`,
+                fontSize: 11,
+                fontWeight: 900,
+                letterSpacing: 0.5,
+                boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+              }}
+            >
+              {(evt.lifecycle || getEventLifecycleStatus(evt)).label}
             </span>
 
             {activeRoundName && (
@@ -560,7 +583,7 @@ export default function EventDetailPage() {
               </div>
 
               {/* Register Button */}
-              <SidebarRegisterBtn href={`/register/${evt.slug || evt.id}`} />
+              <SidebarRegisterBtn href={`/register/${evt.slug || evt.id}`} lifecycle={evt.lifecycle || getEventLifecycleStatus(evt)} />
 
               {/* Subtext */}
               <div style={{ textAlign: "center", fontSize: 12, color: "#F3E8FF", marginTop: 14, fontWeight: 600 }}>

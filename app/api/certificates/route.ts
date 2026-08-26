@@ -42,11 +42,20 @@ export async function GET(request: Request) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
+
     // 1. Fetch generated certificates
-    const { data: rawCerts, error: certErr } = await supabase
+    let certQuery = supabase
       .from("certificates")
       .select("*")
       .order("created_at", { ascending: false });
+
+    if (eventIdParam && eventIdParam !== "all") {
+      certQuery = certQuery.eq("event_id", eventIdParam);
+    }
+
+    const { data: rawCerts, error: certErr } = await certQuery;
 
     if (certErr) {
       console.error("GET /api/certificates DB error:", certErr.message);
@@ -56,10 +65,16 @@ export async function GET(request: Request) {
     const certificatesList = rawCerts || [];
 
     // 2. Fetch registrations (Source of truth)
-    const { data: rawRegs } = await supabase
+    let regQuery = supabase
       .from("registrations")
       .select("id, registration_number, event_id, participant_id, category_id, dance_style_id, registration_status, payment_status, amount, notes, created_at")
       .order("created_at", { ascending: false });
+
+    if (eventIdParam && eventIdParam !== "all") {
+      regQuery = regQuery.eq("event_id", eventIdParam);
+    }
+
+    const { data: rawRegs } = await regQuery;
 
     const regsList = rawRegs || [];
     const regsMap: Record<string, any> = {};

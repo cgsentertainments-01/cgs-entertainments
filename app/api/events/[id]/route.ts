@@ -91,6 +91,53 @@ async function getOrCreateCategoryId(
   return null;
 }
 
+// ─── GET /api/events/[id] ────────────────────────────────────────────────────
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ error: "Missing event ID" }, { status: 400 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      const resolved = await resolveEventId(supabase, id);
+      if (resolved) {
+        const { data, error } = await supabase
+          .from("events")
+          .select("*, event_categories(name)")
+          .eq("id", resolved.uuid)
+          .maybeSingle();
+
+        if (data && !error) {
+          const transformed = transformDbEvent(data);
+          return NextResponse.json({ event: transformed });
+        }
+
+        const { data: fallbackData } = await supabase
+          .from("events")
+          .select("*")
+          .eq("id", resolved.uuid)
+          .maybeSingle();
+
+        if (fallbackData) {
+          const transformed = transformDbEvent(fallbackData);
+          return NextResponse.json({ event: transformed });
+        }
+      }
+    }
+
+    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  } catch (err: any) {
+    console.error("GET /api/events/[id] exception:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 // ─── PUT /api/events/[id] ────────────────────────────────────────────────────
 
 export async function PUT(
@@ -185,6 +232,7 @@ export async function PUT(
       seo,
       homepage_settings,
       form_config,
+      event_type,
     } = body;
 
     // 5. Check slug uniqueness if slug is changing
@@ -298,6 +346,12 @@ function normalizeStatus(value: unknown): string {
       form_config: baseFormConfig,
     };
 
+    if (event_type !== undefined) {
+      const resolvedType = event_type === "upcoming" ? "upcoming" : "published";
+      updatePayload.event_type = resolvedType;
+      baseFormConfig.extra.event_type = resolvedType;
+    }
+
     if (title !== undefined) updatePayload.title = title;
     if (newSlug !== undefined) updatePayload.slug = newSlug;
     if (short_description !== undefined) updatePayload.short_description = short_description;
@@ -329,34 +383,34 @@ function normalizeStatus(value: unknown): string {
     if (terms_conditions !== undefined) updatePayload.terms_conditions = terms_conditions;
     if (rules_regulations !== undefined) updatePayload.rules_regulations = rules_regulations;
     if (mobile_banner_image !== undefined) updatePayload.mobile_banner_image = mobile_banner_image;
-    if (min_age !== undefined) updatePayload.min_age = min_age;
-    if (max_age !== undefined) updatePayload.max_age = max_age;
-    if (registration_type !== undefined) updatePayload.registration_type = registration_type;
-    if (max_team_size !== undefined) updatePayload.max_team_size = max_team_size;
-    if (allow_multiple_categories !== undefined) updatePayload.allow_multiple_categories = Boolean(allow_multiple_categories);
-    if (registration_form_type !== undefined) updatePayload.registration_form_type = registration_form_type;
-    if (participation_categories !== undefined) updatePayload.participation_categories = participation_categories;
-    if (dance_styles !== undefined) updatePayload.dance_styles = dance_styles;
-    if (required_documents !== undefined) updatePayload.required_documents = required_documents;
-    if (payment_required !== undefined) updatePayload.payment_required = Boolean(payment_required);
-    if (currency !== undefined) updatePayload.currency = currency;
-    if (refund_policy !== undefined) updatePayload.refund_policy = refund_policy;
-    if (schedule !== undefined) updatePayload.schedule = schedule;
-    if (judges !== undefined) updatePayload.judges = judges;
-    if (contact_info !== undefined) updatePayload.contact_info = contact_info;
-    if (seo !== undefined) updatePayload.seo = seo;
-    if (homepage_settings !== undefined) updatePayload.homepage_settings = homepage_settings;
 
     console.log(`[PUT /api/events/${eventUUID}] Target Event UUID: ${eventUUID}`);
     console.log(`[PUT /api/events/${eventUUID}] Update payload:`, JSON.stringify(updatePayload));
 
     // 8. Execute UPDATE — target exactly the resolved UUID, confirm row returned
-    const { data: updatedRow, error: sbErr } = await supabase
+    let { data: updatedRow, error: sbErr } = await supabase
       .from("events")
       .update(updatePayload)
       .eq("id", eventUUID)
       .select("*")
       .single();
+
+    if (sbErr && (sbErr.code === "42703" || sbErr.message?.includes("column") || sbErr.message?.includes("rules_regulations") || sbErr.message?.includes("mobile_banner_image") || sbErr.message?.includes("event_type"))) {
+      console.warn(`Notice: Column missing in DB table during update (${sbErr.message}). Retrying update using fallback payload.`);
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.mobile_banner_image;
+      delete fallbackPayload.event_type;
+      delete fallbackPayload.rules_regulations;
+      delete fallbackPayload.terms_conditions;
+      const retryRes = await supabase
+        .from("events")
+        .update(fallbackPayload)
+        .eq("id", eventUUID)
+        .select("*")
+        .single();
+      updatedRow = retryRes.data;
+      sbErr = retryRes.error;
+    }
 
     if (sbErr) {
       console.error(`Supabase UPDATE error for event ${eventUUID}:`, sbErr);
@@ -426,23 +480,48 @@ export async function DELETE(
       // Resolve to UUID first so we never accidentally delete by slug collision
       const resolved = await resolveEventId(supabase, id);
       if (resolved) {
+        const { searchParams } = new URL(request.url);
+        const forceDelete = searchParams.get("force") === "true";
+
         // Check foreign key relationship: registrations table
         const { count: regCount } = await supabase
           .from("registrations")
           .select("id", { count: "exact", head: true })
           .eq("event_id", resolved.uuid);
 
-        if (regCount && regCount > 0) {
+        if (regCount && regCount > 0 && !forceDelete) {
           console.warn(`[DELETE BLOCKED] Event ${resolved.uuid} has ${regCount} existing registration(s).`);
           return NextResponse.json(
             {
               success: false,
               hasRegistrations: true,
               count: regCount,
-              error: `This event has ${regCount} existing registration(s) and cannot be permanently deleted. You can deactivate/archive it instead.`,
+              error: `This event has ${regCount} existing registration(s). Pass force=true to permanently delete the event and its associated records.`,
             },
             { status: 409 }
           );
+        }
+
+        if (forceDelete) {
+          // Cascading cleanup of foreign key dependencies for this event
+          try {
+            await supabase.from("certificates").delete().eq("event_id", resolved.uuid);
+            await supabase.from("event_results").delete().eq("event_id", resolved.uuid);
+            await supabase.from("competition_rounds").delete().eq("event_id", resolved.uuid);
+            
+            const { data: eventRegs } = await supabase
+              .from("registrations")
+              .select("id")
+              .eq("event_id", resolved.uuid);
+              
+            if (eventRegs && eventRegs.length > 0) {
+              const regIds = eventRegs.map((r) => r.id);
+              await supabase.from("registration_payments").delete().in("registration_id", regIds);
+              await supabase.from("registrations").delete().eq("event_id", resolved.uuid);
+            }
+          } catch (cleanupErr: any) {
+            console.warn("Notice during cascading event delete cleanup:", cleanupErr.message);
+          }
         }
 
         console.log("DELETE EVENT ID:", resolved.uuid);

@@ -21,10 +21,13 @@ import {
   Layers,
   FileText,
   Users,
+  Globe,
+  Clock,
 } from "lucide-react";
-import { EventItem, createEvent, updateEvent, getEventByIdOrSlug } from "@/services/event.service";
-import { EventFormConfig, getDefaultFormConfig } from "@/types/event-config";
+import { EventItem, createEvent, updateEvent, getEventByIdOrSlug, deduplicateParticipationTypes } from "@/services/event.service";
+import { EventFormConfig, getDefaultFormConfig, ParticipationTypeConfig } from "@/types/event-config";
 import { FormConfigEditor } from "@/components/events/FormConfigEditor";
+import { getEventLifecycleStatus } from "@/lib/event-lifecycle";
 
 export interface EventFormProps {
   mode: "create" | "edit";
@@ -33,12 +36,18 @@ export interface EventFormProps {
 }
 
 const WIZARD_STEPS = [
-  { step: 1, title: "Basic Information", desc: "Title, date, location & banner" },
-  { step: 2, title: "Competitions / Categories", desc: "Define competition categories" },
-  { step: 3, title: "Registration Form", desc: "Configure required fields & docs" },
-  { step: 4, title: "Registration Fees", desc: "Fees per participation type" },
-  { step: 5, title: "Rounds", desc: "Multi-round setup" },
-  { step: 6, title: "Review & Publish", desc: "Final summary & publish" },
+  { step: 1, title: "Event Information", desc: "Title, slug, category & media" },
+  { step: 2, title: "Event & Registration Schedule", desc: "Dates, times & timezone" },
+  { step: 3, title: "Competitions & Fees", desc: "Solo, Duo, Group options & fees" },
+  { step: 4, title: "Registration Form Setup", desc: "Basic & custom fields, documents" },
+  { step: 5, title: "Rounds & Progression", desc: "Configure competition rounds" },
+  { step: 6, title: "Review & Publish", desc: "Final verification & publish" },
+];
+
+const DEFAULT_PARTICIPATION_TYPES: ParticipationTypeConfig[] = [
+  { id: "solo", name: "Solo", minParticipants: 1, maxParticipants: 1, fee: 500, isActive: true, order: 1 },
+  { id: "duo", name: "Duo", minParticipants: 2, maxParticipants: 2, fee: 800, isActive: true, order: 2 },
+  { id: "group", name: "Group", minParticipants: 4, maxParticipants: 10, fee: 1500, isActive: true, order: 3 },
 ];
 
 export function EventForm({ mode, eventId, initialData }: EventFormProps) {
@@ -48,6 +57,8 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   const [activeStep, setActiveStep] = useState<number>(1);
   const [loading, setLoading] = useState(isEdit && !initialData);
   const [realEventId, setRealEventId] = useState<string>("");
+  const [selectedEventType, setSelectedEventType] = useState<"published" | "upcoming" | null>(isEdit ? "published" : null);
+  const [comingSoonText, setComingSoonText] = useState("Coming Soon");
 
   // Step 1: Basic Event Information
   const [title, setTitle] = useState("");
@@ -56,47 +67,39 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   const [shortDescription, setShortDescription] = useState("");
   const [description, setDescription] = useState("");
   const [categoryName, setCategoryName] = useState("Dance");
-  const [categoryId, setCategoryId] = useState("");
   const [status, setStatus] = useState<string>("registration_open");
   const [isFeatured, setIsFeatured] = useState(false);
   const [isPublished, setIsPublished] = useState(true);
 
-  // Dates & Location
+  // Step 2: Event & Registration Schedule
   const [eventStartDate, setEventStartDate] = useState("");
   const [eventStartTime, setEventStartTime] = useState("10:00");
   const [eventEndDate, setEventEndDate] = useState("");
   const [eventEndTime, setEventEndTime] = useState("20:00");
   const [regStartDate, setRegStartDate] = useState("");
-  const [regDeadline, setRegDeadline] = useState("");
+  const [regStartTime, setRegStartTime] = useState("09:00");
+  const [regDeadlineDate, setRegDeadlineDate] = useState("");
+  const [regDeadlineTime, setRegDeadlineTime] = useState("23:59");
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
 
+  // Venue & Location
   const [venue, setVenue] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("Hyderabad");
   const [state, setState] = useState("Telangana");
   const [pincode, setPincode] = useState("500001");
+  const [googleMapsUrl, setGoogleMapsUrl] = useState("");
 
   // Media
   const [bannerImg, setBannerImg] = useState("");
+  const [mobileBannerImg, setMobileBannerImg] = useState("");
 
-  // Step 2: Competitions List
-  const [competitions, setCompetitions] = useState<
-    Array<{ id: string; name: string; type: string; fee: number; minAge: number; maxAge: number; rules: string }>
-  >([
-    { id: "comp-1", name: "Solo Dance", type: "solo", fee: 500, minAge: 5, maxAge: 60, rules: "Solo stage performance (3-5 mins)" },
-    { id: "comp-2", name: "Duo Dance", type: "duo", fee: 800, minAge: 5, maxAge: 60, rules: "Duo stage performance (3-5 mins)" },
-    { id: "comp-3", name: "Group Dance", type: "group", fee: 2000, minAge: 5, maxAge: 60, rules: "Group performance (min 4 members)" },
-    { id: "comp-4", name: "Best Photo", type: "solo", fee: 300, minAge: 5, maxAge: 60, rules: "Photo submission contest" },
-  ]);
-
-  // Step 3: Registration Form Config
-  const [formConfig, setFormConfig] = useState<EventFormConfig>(getDefaultFormConfig(categoryName));
-  const [requiredDocs, setRequiredDocs] = useState<string[]>(["Passport Photo", "Aadhaar / ID Proof", "Dance Video"]);
-
-  // Step 4: Fees by Participation Type
-  const [feeSolo, setFeeSolo] = useState<number>(500);
-  const [feeDuo, setFeeDuo] = useState<number>(800);
-  const [feeGroup, setFeeGroup] = useState<number>(2000);
-  const [generalRegFee, setGeneralRegFee] = useState<number>(500);
+  // Step 3 & 4: Registration Form Config (Single canonical source of truth for participation types)
+  const [formConfig, setFormConfig] = useState<EventFormConfig>(() => {
+    const base = getDefaultFormConfig(categoryName, 500);
+    base.participationTypes = DEFAULT_PARTICIPATION_TYPES;
+    return base;
+  });
 
   // Step 5: Multi-Round Setup
   const [roundsList, setRoundsList] = useState<Array<{ name: string; status: string; fee: number }>>([
@@ -105,7 +108,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     { name: "Final", status: "upcoming", fee: 0 },
   ]);
 
-  // State & Loading
+  // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -113,6 +116,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   // Populate data when editing an event
   const populateData = (evt: EventItem) => {
     if (evt.id) setRealEventId(evt.id);
+    setSelectedEventType(evt.event_type || "published");
     setTitle(evt.title || "");
     setSlug(evt.slug || "");
     setAutoSlug(false);
@@ -123,27 +127,67 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     setIsFeatured(Boolean(evt.is_featured));
     setIsPublished(evt.is_published !== undefined ? Boolean(evt.is_published) : true);
 
+    // Parse Event Dates
     if (evt.rawDate || evt.event_date) {
       const dt = evt.rawDate || evt.event_date || "";
-      setEventStartDate(dt.includes("T") ? dt.split("T")[0] : dt);
+      if (dt.includes("T")) {
+        const parts = dt.split("T");
+        setEventStartDate(parts[0]);
+        setEventStartTime(parts[1]?.substring(0, 5) || "10:00");
+      } else {
+        setEventStartDate(dt);
+      }
     }
+    if (evt.event_end_date) {
+      const dt = evt.event_end_date;
+      if (dt.includes("T")) {
+        const parts = dt.split("T");
+        setEventEndDate(parts[0]);
+        setEventEndTime(parts[1]?.substring(0, 5) || "20:00");
+      } else {
+        setEventEndDate(dt);
+      }
+    }
+    if (evt.registration_start_date) {
+      const dt = evt.registration_start_date;
+      if (dt.includes("T")) {
+        const parts = dt.split("T");
+        setRegStartDate(parts[0]);
+        setRegStartTime(parts[1]?.substring(0, 5) || "09:00");
+      } else {
+        setRegStartDate(dt);
+      }
+    }
+    if (evt.registration_deadline) {
+      const dt = evt.registration_deadline;
+      if (dt.includes("T")) {
+        const parts = dt.split("T");
+        setRegDeadlineDate(parts[0]);
+        setRegDeadlineTime(parts[1]?.substring(0, 5) || "23:59");
+      } else {
+        setRegDeadlineDate(dt);
+      }
+    }
+
     if (evt.venue) setVenue(evt.venue);
+    if (evt.address) setAddress(evt.address);
     if (evt.city) setCity(evt.city);
+    if (evt.state) setState(evt.state);
+    if (evt.pincode) setPincode(evt.pincode);
+    if (evt.google_maps_url) setGoogleMapsUrl(evt.google_maps_url);
+
     if (evt.banner_url || evt.banner_image || evt.img) setBannerImg(evt.banner_url || evt.banner_image || evt.img || "");
+    if (evt.mobile_banner_image) setMobileBannerImg(evt.mobile_banner_image);
 
-    const fee = typeof evt.registrationFee === "number" ? evt.registrationFee : evt.registration_fee || 0;
-    setGeneralRegFee(fee);
-
+    // Form Config & Participation Types (Loaded without duplicating)
     if (evt.form_config) {
-      setFormConfig(evt.form_config);
-      if (evt.form_config.competitions && Array.isArray(evt.form_config.competitions)) {
-        setCompetitions(evt.form_config.competitions);
+      const cfg = { ...evt.form_config };
+      if (Array.isArray(cfg.participationTypes) && cfg.participationTypes.length > 0) {
+        cfg.participationTypes = deduplicateParticipationTypes(cfg.participationTypes);
+      } else {
+        cfg.participationTypes = DEFAULT_PARTICIPATION_TYPES;
       }
-      if (evt.form_config.feeStructure) {
-        if (evt.form_config.feeStructure.solo) setFeeSolo(evt.form_config.feeStructure.solo);
-        if (evt.form_config.feeStructure.duo) setFeeDuo(evt.form_config.feeStructure.duo);
-        if (evt.form_config.feeStructure.group) setFeeGroup(evt.form_config.feeStructure.group);
-      }
+      setFormConfig(cfg);
     }
   };
 
@@ -170,40 +214,47 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     }
   };
 
-  const handleImageFile = (file: File) => {
+  const handleImageFile = (file: File, isMobile = false) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      if (typeof reader.result === "string") setBannerImg(reader.result);
+      if (typeof reader.result === "string") {
+        if (isMobile) setMobileBannerImg(reader.result);
+        else setBannerImg(reader.result);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const addCompetition = () => {
-    const newComp = {
-      id: `comp-${Date.now()}`,
-      name: "New Competition",
-      type: "solo",
+  // Synchronize Participation Types directly in formConfig
+  const updateParticipationType = (idx: number, field: keyof ParticipationTypeConfig, val: any) => {
+    const types = [...(formConfig.participationTypes || [])];
+    types[idx] = { ...types[idx], [field]: val };
+    setFormConfig({ ...formConfig, participationTypes: deduplicateParticipationTypes(types) });
+  };
+
+  const addParticipationType = () => {
+    const currentTypes = formConfig.participationTypes || [];
+    const newType: ParticipationTypeConfig = {
+      id: `comp_${Date.now()}`,
+      name: "Custom Competition",
+      minParticipants: 1,
+      maxParticipants: 1,
       fee: 500,
-      minAge: 5,
-      maxAge: 60,
-      rules: "Performance rules...",
+      isActive: true,
+      order: currentTypes.length + 1,
     };
-    setCompetitions((prev) => [...prev, newComp]);
+    setFormConfig({
+      ...formConfig,
+      participationTypes: deduplicateParticipationTypes([...currentTypes, newType]),
+    });
   };
 
-  const removeCompetition = (id: string) => {
-    setCompetitions((prev) => prev.filter((c) => c.id !== id));
-  };
-
-  const addRound = () => {
-    setRoundsList((prev) => [
-      ...prev,
-      { name: `Round ${prev.length + 1}`, status: "upcoming", fee: 0 },
-    ]);
-  };
-
-  const removeRound = (idx: number) => {
-    setRoundsList((prev) => prev.filter((_, i) => i !== idx));
+  const removeParticipationType = (idx: number) => {
+    const currentTypes = (formConfig.participationTypes || []).filter((_, i) => i !== idx);
+    setFormConfig({
+      ...formConfig,
+      participationTypes: currentTypes.length > 0 ? currentTypes : DEFAULT_PARTICIPATION_TYPES,
+    });
   };
 
   // Submit Handler
@@ -213,44 +264,84 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    // Validation Rules
     if (!title.trim()) {
       setErrorMsg("Event Title is required.");
       setActiveStep(1);
       return;
     }
 
+    if (!eventStartDate) {
+      setErrorMsg("Event Start Date is required.");
+      setActiveStep(2);
+      return;
+    }
+
+    // Combine ISO dates cleanly
+    const fullEventStartISO = `${eventStartDate}T${eventStartTime || "10:00"}:00+05:30`;
+    const fullEventEndISO = eventEndDate ? `${eventEndDate}T${eventEndTime || "20:00"}:00+05:30` : undefined;
+    const fullRegStartISO = regStartDate ? `${regStartDate}T${regStartTime || "09:00"}:00+05:30` : undefined;
+    const fullRegCloseISO = regDeadlineDate ? `${regDeadlineDate}T${regDeadlineTime || "23:59"}:00+05:30` : undefined;
+
+    if (fullRegStartISO && fullRegCloseISO) {
+      if (new Date(fullRegCloseISO) <= new Date(fullRegStartISO)) {
+        setErrorMsg("Registration Closing date must be after Registration Opening date.");
+        setActiveStep(2);
+        return;
+      }
+    }
+
+    const activeTypes = (formConfig.participationTypes || []).filter((pt) => pt.isActive !== false);
+    if (activeTypes.length === 0) {
+      setErrorMsg("At least one enabled competition is required.");
+      setActiveStep(3);
+      return;
+    }
+
+    // Primary fee = lowest active fee
+    const primaryFee = Math.min(...activeTypes.map((pt) => Number(pt.fee) || 0));
+
     setIsSubmitting(true);
 
     try {
+      const cleanedTypes = deduplicateParticipationTypes(formConfig.participationTypes);
+
       const mergedFormConfig: EventFormConfig = {
         ...formConfig,
-        competitions,
-        feeStructure: {
-          solo: feeSolo,
-          duo: feeDuo,
-          group: feeGroup,
-        },
+        participationTypes: cleanedTypes,
+        feeStructure: cleanedTypes.reduce((acc: any, pt: any) => {
+          acc[pt.id || pt.name.toLowerCase()] = pt.fee;
+          return acc;
+        }, {}),
       };
 
       const payload: any = {
-        title,
-        slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+        title: title.trim(),
+        slug: slug.trim() || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
         short_description: shortDescription || title,
         description: description || shortDescription || title,
         category: categoryName,
-        event_date: eventStartDate ? `${eventStartDate}T${eventStartTime || "10:00"}:00Z` : new Date().toISOString(),
+        event_date: fullEventStartISO,
+        event_start_time: eventStartTime || "10:00 AM",
+        event_end_date: fullEventEndISO,
+        event_end_time: eventEndTime || "08:00 PM",
+        registration_start_date: fullRegStartISO,
+        registration_deadline: fullRegCloseISO,
+        timezone: timezone || "Asia/Kolkata",
         venue: venue || "Venue TBA",
-        address,
+        address: address || "",
         city: city || "Hyderabad",
-        state,
-        pincode,
+        state: state || "Telangana",
+        pincode: pincode || "500001",
+        google_maps_url: googleMapsUrl,
         banner_image: bannerImg,
+        mobile_banner_image: mobileBannerImg || bannerImg,
         registration_required: true,
-        registration_fee: feeSolo || generalRegFee || 0,
-        price: feeSolo || generalRegFee || 0,
-        required_documents: requiredDocs,
+        registration_fee: primaryFee,
+        price: primaryFee,
         form_config: mergedFormConfig,
         status: isPublishAction ? "registration_open" : "draft",
+        event_type: "published",
         is_featured: isFeatured,
         is_published: isPublishAction,
       };
@@ -260,31 +351,110 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         payload.id = targetId;
         const res = await updateEvent(targetId, payload);
         if (res.success) {
-          setSuccessMsg("Event updated successfully!");
+          setSuccessMsg("Event published successfully in Supabase!");
           setTimeout(() => {
             router.refresh();
             router.push("/admin/events");
           }, 800);
         } else {
-          setErrorMsg(res.error || "Unable to update event.");
+          setErrorMsg(res.error || "Unable to update event in Supabase.");
           setIsSubmitting(false);
         }
       } else {
         const res = await createEvent(payload);
         if (res.success) {
-          setSuccessMsg("New event created successfully!");
+          setSuccessMsg("Event published successfully in Supabase!");
           setTimeout(() => {
             router.refresh();
             router.push("/admin/events");
           }, 800);
         } else {
-          setErrorMsg(res.error || "Failed to create event.");
+          setErrorMsg(res.error || "Failed to save event to Supabase database.");
           setIsSubmitting(false);
         }
       }
     } catch (err: any) {
       console.error("Submit error:", err);
-      setErrorMsg(err.message || "An unexpected error occurred.");
+      setErrorMsg(err.message || "An unexpected technical error occurred while connecting to Supabase.");
+      setIsSubmitting(false);
+    }
+  };
+
+  // Submit Handler for Upcoming Event (Lightweight promotional announcement)
+  const handleSubmitUpcoming = async () => {
+    if (isSubmitting) return;
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!title.trim()) {
+      setErrorMsg("Event Name is required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const fullEventStartISO = eventStartDate ? `${eventStartDate}T${eventStartTime || "10:00"}:00+05:30` : new Date().toISOString();
+
+      const payload: any = {
+        title: title.trim(),
+        slug: slug.trim() || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+        short_description: shortDescription || title,
+        description: description || shortDescription || title,
+        category: categoryName,
+        event_date: fullEventStartISO,
+        venue: venue || "Venue TBA",
+        city: city || "Hyderabad",
+        banner_image: bannerImg,
+        mobile_banner_image: mobileBannerImg || bannerImg,
+        event_type: "upcoming",
+        status: "upcoming",
+        is_published: isPublished,
+        registration_required: false,
+        registration_fee: 0,
+        price: 0,
+        homepage_settings: { show_on_homepage: true, coming_soon_text: comingSoonText },
+        form_config: {
+          ...(formConfig || {}),
+          extra: {
+            ...(formConfig?.extra || {}),
+            event_type: "upcoming",
+            coming_soon_text: comingSoonText,
+          },
+        },
+      };
+
+      if (isEdit && (realEventId || eventId)) {
+        const targetId = realEventId || eventId || "";
+        payload.id = targetId;
+        const res = await updateEvent(targetId, payload);
+        if (res.success) {
+          setSuccessMsg("Upcoming Event saved successfully!");
+          setTimeout(() => {
+            router.refresh();
+            router.push("/admin/events");
+          }, 800);
+        } else {
+          setErrorMsg(res.error || "Unable to update upcoming event.");
+          setIsSubmitting(false);
+        }
+      } else {
+        const res = await createEvent(payload);
+        if (res.success) {
+          setSuccessMsg("Upcoming Event created successfully!");
+          setTimeout(() => {
+            router.refresh();
+            router.push("/admin/events");
+          }, 800);
+        } else {
+          setErrorMsg(res.error || "Failed to save upcoming event.");
+          setIsSubmitting(false);
+        }
+      }
+    } catch (err: any) {
+      console.error("Submit upcoming error:", err);
+      setErrorMsg(err.message || "An error occurred while saving upcoming event.");
       setIsSubmitting(false);
     }
   };
@@ -296,6 +466,331 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
       </div>
     );
   }
+
+  // ── 1. SELECT EVENT TYPE CHOICE SCREEN (CREATE MODE INITIAL STEP) ──
+  if (!selectedEventType && !isEdit) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <Link
+          href="/admin/events"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#64748B", textDecoration: "none" }}
+        >
+          <ArrowLeft size={16} /> Back to Events
+        </Link>
+
+        <div style={{ background: "#fff", borderRadius: 24, border: "1px solid #E2E8F0", padding: "48px 36px", textAlign: "center", maxWidth: 780, margin: "0 auto", width: "100%", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+          <h2 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>Select Event Type</h2>
+          <p style={{ fontSize: 14.5, color: "#64748B", margin: "0 0 36px", fontWeight: 500 }}>
+            Choose how you want to create this event. This controls required fields and frontend placement.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
+            {/* Option 1: Publish Event */}
+            <div
+              onClick={() => setSelectedEventType("published")}
+              style={{
+                border: "2px solid #7C3AED",
+                borderRadius: 20,
+                padding: 28,
+                cursor: "pointer",
+                background: "linear-gradient(180deg, #FAF5FF 0%, #FFFFFF 100%)",
+                textAlign: "left",
+                transition: "all 0.2s ease",
+                boxShadow: "0 4px 14px rgba(124, 58, 237, 0.08)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: "#7C3AED", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, boxShadow: "0 4px 12px rgba(124, 58, 237, 0.3)" }}>
+                  <CheckCircle2 size={26} />
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>Publish Event</h3>
+                <p style={{ fontSize: 13.5, color: "#475569", margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                  Configure a full registration-ready event. Setup event dates, venue, solo/duo/group options, registration fees, payment settings, documents, and judges.
+                </p>
+              </div>
+
+              <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid #F3E8FF", fontSize: 13, fontWeight: 800, color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Main Events Section</span>
+                <ChevronRight size={18} />
+              </div>
+            </div>
+
+            {/* Option 2: Upcoming Event */}
+            <div
+              onClick={() => setSelectedEventType("upcoming")}
+              style={{
+                border: "2px solid #3B82F6",
+                borderRadius: 20,
+                padding: 28,
+                cursor: "pointer",
+                background: "linear-gradient(180deg, #EFF6FF 0%, #FFFFFF 100%)",
+                textAlign: "left",
+                transition: "all 0.2s ease",
+                boxShadow: "0 4px 14px rgba(59, 130, 246, 0.08)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: "#3B82F6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)" }}>
+                  <Clock size={26} />
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>Upcoming Event</h3>
+                <p style={{ fontSize: 13.5, color: "#475569", margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                  Quick promotional announcement. Requires only Event Name, Image, Category, Short description, and optional expected date/location.
+                </p>
+              </div>
+
+              <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid #DBEAFE", fontSize: 13, fontWeight: 800, color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Upcoming Events Section Only</span>
+                <ChevronRight size={18} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 2. UPCOMING EVENT CREATION / EDIT FORM (LIGHTWEIGHT PROMOTIONAL FLOW) ──
+  if (selectedEventType === "upcoming") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <Link
+              href="/admin/events"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#64748B", textDecoration: "none", marginBottom: 6 }}
+            >
+              <ArrowLeft size={16} /> Back to Events
+            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h1 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: 0 }}>
+                {isEdit ? `Edit Upcoming Event: ${title || "Untitled"}` : "Create Upcoming Event"}
+              </h1>
+              <span style={{ padding: "4px 10px", borderRadius: 8, background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", fontSize: 11, fontWeight: 900 }}>
+                UPCOMING EVENT
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              type="button"
+              onClick={() => setSelectedEventType("published")}
+              style={{ padding: "10px 18px", borderRadius: 12, background: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)", color: "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 14px rgba(109, 40, 217, 0.25)" }}
+            >
+              <Sparkles size={16} /> Complete &amp; Publish Event
+            </button>
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 14, padding: "14px 18px", color: "#DC2626", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertCircle size={18} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div style={{ background: "#DCFCE7", border: "1px solid #86EFAC", borderRadius: 14, padding: "14px 18px", color: "#15803D", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+            <CheckCircle2 size={18} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Lightweight Form Box */}
+        <div style={{ background: "#fff", padding: 32, borderRadius: 20, border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 22 }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: 16, borderRadius: 14, color: "#1D4ED8", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>📢 This will create a promotional card under <strong>Upcoming Events</strong> with a <strong>COMING SOON</strong> badge. Registration fees &amp; forms will be hidden until published.</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                Event Name *
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Warangal Dance Championship"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                Category *
+              </label>
+              <select
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none", background: "#fff" }}
+              >
+                <option value="Dance">Dance</option>
+                <option value="Modeling">Modeling</option>
+                <option value="Acting">Acting</option>
+                <option value="Singing">Singing</option>
+                <option value="Music">Music</option>
+                <option value="Photography">Photography</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+              Short Description / Subtitle
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Grand National Dance Competition coming soon to Telangana."
+              value={shortDescription}
+              onChange={(e) => setShortDescription(e.target.value)}
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                Expected Event Date (Optional)
+              </label>
+              <input
+                type="date"
+                value={eventStartDate}
+                onChange={(e) => setEventStartDate(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                Expected Location / City (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Warangal, Telangana"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+              Banner Image URL / File
+            </label>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="https://images.unsplash.com/..."
+                value={bannerImg}
+                onChange={(e) => setBannerImg(e.target.value)}
+                style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+              />
+              <label style={{ padding: "11px 18px", borderRadius: 10, background: "#F1F5F9", color: "#334155", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+                Browse...
+                <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageFile(e.target.files[0], false)} style={{ display: "none" }} />
+              </label>
+            </div>
+          </div>
+
+          <div style={{ background: "#F8FAFC", padding: 18, borderRadius: 14, border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#0F172A" }}>Coming Soon Announcement Status</div>
+              <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 2 }}>
+                {isPublished ? "Active — Visible in Upcoming Events section on public frontend" : "Hidden Draft — Saved in admin panel only"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPublished(!isPublished)}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 20,
+                background: isPublished ? "#DCFCE7" : "#F1F5F9",
+                color: isPublished ? "#15803D" : "#64748B",
+                border: `1.5px solid ${isPublished ? "#86EFAC" : "#CBD5E1"}`,
+                fontWeight: 900,
+                fontSize: 13,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {isPublished ? <CheckCircle2 size={16} /> : null}
+              <span>{isPublished ? "Active Coming Soon" : "Hidden Draft"}</span>
+            </button>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+              Badge Text (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="COMING SOON"
+              value={comingSoonText}
+              onChange={(e) => setComingSoonText(e.target.value)}
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20, paddingTop: 20, borderTop: "1px solid #E2E8F0" }}>
+            <button
+              type="button"
+              onClick={() => setSelectedEventType(null)}
+              style={{ padding: "10px 20px", borderRadius: 12, background: "#F1F5F9", color: "#334155", border: "1px solid #CBD5E1", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}
+            >
+              Change Event Type
+            </button>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                onClick={handleSubmitUpcoming}
+                disabled={isSubmitting}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "11px 26px",
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+                  color: "#fff",
+                  border: "none",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  boxShadow: "0 4px 14px rgba(37, 99, 235, 0.3)",
+                  opacity: isSubmitting ? 0.7 : 1,
+                }}
+              >
+                <CheckCircle2 size={18} /> {isSubmitting ? "Saving Upcoming Event..." : "Save Upcoming Event"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate live preview lifecycle badge
+  const previewLifecycle = getEventLifecycleStatus({
+    is_published: isPublished,
+    status: isPublished ? "registration_open" : "draft",
+    registration_start_date: regStartDate ? `${regStartDate}T${regStartTime}:00+05:30` : null,
+    registration_deadline: regDeadlineDate ? `${regDeadlineDate}T${regDeadlineTime}:00+05:30` : null,
+    event_date: eventStartDate ? `${eventStartDate}T${eventStartTime}:00+05:30` : null,
+    event_end_date: eventEndDate ? `${eventEndDate}T${eventEndTime}:00+05:30` : null,
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -381,11 +876,11 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
 
       {/* STEP CONTENT CONTAINERS */}
       <div style={{ background: "#fff", padding: 28, borderRadius: 20, border: "1px solid #E2E8F0" }}>
-        {/* STEP 1: Basic Event Information */}
+        {/* STEP 1: Event Information */}
         {activeStep === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
-              Step 1: Basic Event Information
+              Step 1: Event Information
             </h2>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -395,7 +890,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Warangal Dance Championship"
+                  placeholder="e.g. Warangal Dance Championship 2026"
                   value={title}
                   onChange={(e) => handleTitleChange(e.target.value)}
                   style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
@@ -404,11 +899,11 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
 
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
-                  URL Slug
+                  URL Slug *
                 </label>
                 <input
                   type="text"
-                  placeholder="warangal-dance-championship"
+                  placeholder="warangal-dance-championship-2026"
                   value={slug}
                   onChange={(e) => { setSlug(e.target.value); setAutoSlug(false); }}
                   style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
@@ -416,32 +911,53 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
               </div>
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
-                Short Description
-              </label>
-              <input
-                type="text"
-                placeholder="National dance competition event in Telangana"
-                value={shortDescription}
-                onChange={(e) => setShortDescription(e.target.value)}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
-                  Event Date
+                  Category
+                </label>
+                <select
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none", background: "#fff" }}
+                >
+                  <option value="Dance">Dance</option>
+                  <option value="Modeling">Modeling</option>
+                  <option value="Acting">Acting</option>
+                  <option value="Singing">Singing</option>
+                  <option value="Music">Music</option>
+                  <option value="Photography">Photography</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                  Short Description / Subtitle
                 </label>
                 <input
-                  type="date"
-                  value={eventStartDate}
-                  onChange={(e) => setEventStartDate(e.target.value)}
+                  type="text"
+                  placeholder="National dance competition event in Telangana"
+                  value={shortDescription}
+                  onChange={(e) => setShortDescription(e.target.value)}
                   style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
                 />
               </div>
+            </div>
 
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                Full Description
+              </label>
+              <textarea
+                rows={4}
+                placeholder="Detailed event description, highlights, eligibility, guidelines..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none", resize: "vertical" }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
                   Venue Name
@@ -471,96 +987,173 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
 
             <div>
               <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
-                Banner / Poster Image
+                Banner Image URL
               </label>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <input
                   type="text"
-                  placeholder="Image URL or upload file"
+                  placeholder="https://images.unsplash.com/..."
                   value={bannerImg}
                   onChange={(e) => setBannerImg(e.target.value)}
                   style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none" }}
                 />
                 <label style={{ padding: "11px 18px", borderRadius: 10, background: "#F1F5F9", color: "#334155", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
                   Browse...
-                  <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageFile(e.target.files[0])} style={{ display: "none" }} />
+                  <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageFile(e.target.files[0], false)} style={{ display: "none" }} />
                 </label>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 2: Competitions / Categories */}
+        {/* STEP 2: Event & Registration Schedule */}
         {activeStep === 2 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
+              Step 2: Event & Registration Schedule
+            </h2>
+            <p style={{ fontSize: 13.5, color: "#64748B", margin: 0 }}>
+              Specify event dates, registration dates, and times in Asia/Kolkata (IST).
+            </p>
+
+            {/* Event Schedule Section */}
+            <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 14, border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>Event Schedule</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Event Start Date *</label>
+                  <input type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Event Start Time</label>
+                  <input type="time" value={eventStartTime} onChange={(e) => setEventStartTime(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Event End Date</label>
+                  <input type="date" value={eventEndDate} onChange={(e) => setEventEndDate(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Event End Time</label>
+                  <input type="time" value={eventEndTime} onChange={(e) => setEventEndTime(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Registration Schedule Section */}
+            <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 14, border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>Registration Schedule</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Registration Opens Date</label>
+                  <input type="date" value={regStartDate} onChange={(e) => setRegStartDate(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Opens Time</label>
+                  <input type="time" value={regStartTime} onChange={(e) => setRegStartTime(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Registration Closes Date</label>
+                  <input type="date" value={regDeadlineDate} onChange={(e) => setRegDeadlineDate(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "#334155", display: "block", marginBottom: 4 }}>Closes Time</label>
+                  <input type="time" value={regDeadlineTime} onChange={(e) => setRegDeadlineTime(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, outline: "none" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Calculated Lifecycle State Preview */}
+            <div style={{ background: "#F1F5F9", padding: 16, borderRadius: 12, border: "1px solid #CBD5E1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Automated Lifecycle Calculation</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A", marginTop: 2 }}>{previewLifecycle.message}</div>
+              </div>
+              <span style={{ padding: "6px 14px", borderRadius: 8, background: previewLifecycle.badgeBg, color: previewLifecycle.badgeColor, border: `1px solid ${previewLifecycle.badgeBorder}`, fontSize: 12, fontWeight: 900 }}>
+                {previewLifecycle.label}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Competitions & Participation Fees */}
+        {activeStep === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: "0 0 4px" }}>
-                  Step 2: Competitions / Categories
+                  Step 3: Competitions & Participation Fees
                 </h2>
                 <p style={{ fontSize: 13, color: "#64748B", margin: 0 }}>
-                  Define individual competition categories for this event.
+                  Define competition options (Solo, Duo, Group, etc.) and registration fees. Each option is displayed exactly once.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={addCompetition}
+                onClick={addParticipationType}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10, background: "#7C3AED", color: "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
               >
-                <Plus size={16} /> + Add Competition
+                <Plus size={16} /> + Add Competition Option
               </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {competitions.map((c, idx) => (
-                <div key={c.id} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: 16, display: "grid", gridTemplateColumns: "2fr 1fr 1fr 40px", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {(formConfig.participationTypes || []).map((pt, idx) => (
+                <div key={pt.id || idx} style={{ background: pt.isActive !== false ? "#ffffff" : "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: 18, display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1.2fr 0.8fr 40px", gap: 12, alignItems: "center" }}>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 800, color: "#64748B" }}>Competition Name</label>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: "#475569", marginBottom: 4, display: "block" }}>Competition Option Name</label>
                     <input
                       type="text"
-                      value={c.name}
-                      onChange={(e) => {
-                        const updated = [...competitions];
-                        updated[idx].name = e.target.value;
-                        setCompetitions(updated);
-                      }}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", marginTop: 4 }}
+                      value={pt.name}
+                      onChange={(e) => updateParticipationType(idx, "name", e.target.value)}
+                      placeholder="Solo / Duo / Group / Trio"
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5, fontWeight: 700 }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 800, color: "#64748B" }}>Category Type</label>
-                    <select
-                      value={c.type}
-                      onChange={(e) => {
-                        const updated = [...competitions];
-                        updated[idx].type = e.target.value;
-                        setCompetitions(updated);
-                      }}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", marginTop: 4, background: "#fff" }}
-                    >
-                      <option value="solo">Solo</option>
-                      <option value="duo">Duo</option>
-                      <option value="trio">Trio</option>
-                      <option value="group">Group</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 800, color: "#64748B" }}>Fee (₹)</label>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: "#475569", marginBottom: 4, display: "block" }}>Min Members</label>
                     <input
                       type="number"
-                      value={c.fee}
-                      onChange={(e) => {
-                        const updated = [...competitions];
-                        updated[idx].fee = Number(e.target.value);
-                        setCompetitions(updated);
-                      }}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", marginTop: 4 }}
+                      min={1}
+                      value={pt.minParticipants}
+                      onChange={(e) => updateParticipationType(idx, "minParticipants", parseInt(e.target.value, 10) || 1)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5 }}
                     />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: "#475569", marginBottom: 4, display: "block" }}>Max Members</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={pt.maxParticipants}
+                      onChange={(e) => updateParticipationType(idx, "maxParticipants", parseInt(e.target.value, 10) || 1)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13.5 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: "#475569", marginBottom: 4, display: "block" }}>Registration Fee (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={pt.fee}
+                      onChange={(e) => updateParticipationType(idx, "fee", parseFloat(e.target.value) || 0)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 14, fontWeight: 800, color: "#059669" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: "#475569", marginBottom: 4, display: "block" }}>Status</label>
+                    <button
+                      type="button"
+                      onClick={() => updateParticipationType(idx, "isActive", !pt.isActive)}
+                      style={{ width: "100%", padding: "8px", borderRadius: 8, border: "none", background: pt.isActive !== false ? "#DCFCE7" : "#F1F5F9", color: pt.isActive !== false ? "#166534" : "#64748B", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {pt.isActive !== false ? "Enabled" : "Disabled"}
+                    </button>
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeCompetition(c.id)}
+                    onClick={() => removeParticipationType(idx)}
                     style={{ background: "#FEE2E2", border: "none", color: "#DC2626", borderRadius: 8, padding: 8, cursor: "pointer", marginTop: 16 }}
+                    title="Remove Option"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -570,60 +1163,13 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
           </div>
         )}
 
-        {/* STEP 3: Registration Form Configuration */}
-        {activeStep === 3 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
-              Step 3: Registration Form Configuration
-            </h2>
-            <FormConfigEditor formConfig={formConfig} onChange={setFormConfig} eventTitle={title || "Event"} categoryName={categoryName || "Dance"} />
-          </div>
-        )}
-
-        {/* STEP 4: Registration Fees */}
+        {/* STEP 4: Registration Form Configuration */}
         {activeStep === 4 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
-              Step 4: Registration Fees
+              Step 4: Registration Form Setup
             </h2>
-            <p style={{ fontSize: 13.5, color: "#64748B", margin: 0 }}>
-              Configure fees dynamically by participation type.
-            </p>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-              <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 14, border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>Solo Participation</div>
-                <label style={{ fontSize: 12, color: "#64748B", display: "block", marginBottom: 4 }}>Fee (₹)</label>
-                <input
-                  type="number"
-                  value={feeSolo}
-                  onChange={(e) => setFeeSolo(Number(e.target.value))}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 15, fontWeight: 800, color: "#7C3AED", outline: "none" }}
-                />
-              </div>
-
-              <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 14, border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>Duo Participation</div>
-                <label style={{ fontSize: 12, color: "#64748B", display: "block", marginBottom: 4 }}>Fee (₹)</label>
-                <input
-                  type="number"
-                  value={feeDuo}
-                  onChange={(e) => setFeeDuo(Number(e.target.value))}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 15, fontWeight: 800, color: "#7C3AED", outline: "none" }}
-                />
-              </div>
-
-              <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 14, border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>Group Participation</div>
-                <label style={{ fontSize: 12, color: "#64748B", display: "block", marginBottom: 4 }}>Fee (₹)</label>
-                <input
-                  type="number"
-                  value={feeGroup}
-                  onChange={(e) => setFeeGroup(Number(e.target.value))}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 15, fontWeight: 800, color: "#7C3AED", outline: "none" }}
-                />
-              </div>
-            </div>
+            <FormConfigEditor formConfig={formConfig} onChange={setFormConfig} eventTitle={title || "Event"} categoryName={categoryName || "Dance"} />
           </div>
         )}
 
@@ -636,12 +1182,12 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                   Step 5: Multi-Round Setup
                 </h2>
                 <p style={{ fontSize: 13, color: "#64748B", margin: 0 }}>
-                  Configure progression rounds (e.g. Round 1, Semi Final, Final).
+                  Configure competition progression rounds.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={addRound}
+                onClick={() => setRoundsList([...roundsList, { name: `Round ${roundsList.length + 1}`, status: "upcoming", fee: 0 }])}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10, background: "#7C3AED", color: "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
               >
                 <Plus size={16} /> + Add Round
@@ -682,7 +1228,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeRound(idx)}
+                    onClick={() => setRoundsList(roundsList.filter((_, i) => i !== idx))}
                     style={{ background: "#FEE2E2", border: "none", color: "#DC2626", borderRadius: 8, padding: 8, cursor: "pointer", marginTop: 16 }}
                   >
                     <Trash2 size={16} />
@@ -699,13 +1245,29 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
             <h2 style={{ fontSize: 18, fontWeight: 900, color: "#0F172A", margin: 0 }}>
               Step 6: Review & Publish
             </h2>
-            <div style={{ background: "#F8FAFC", borderRadius: 16, padding: 20, border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div><strong>Event Title:</strong> {title || "Not specified"}</div>
-              <div><strong>Location:</strong> {venue}, {city}</div>
-              <div><strong>Event Date:</strong> {eventStartDate || "TBA"}</div>
-              <div><strong>Competitions ({competitions.length}):</strong> {competitions.map((c) => c.name).join(", ")}</div>
-              <div><strong>Fee Structure:</strong> Solo: ₹{feeSolo} | Duo: ₹{feeDuo} | Group: ₹{feeGroup}</div>
-              <div><strong>Configured Rounds ({roundsList.length}):</strong> {roundsList.map((r) => r.name).join(" → ")}</div>
+
+            <div style={{ background: "#F8FAFC", borderRadius: 16, padding: 20, border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div><strong>Event Title:</strong> {title || "Untitled Event"}</div>
+              <div><strong>Category:</strong> {categoryName}</div>
+              <div><strong>Location:</strong> {venue || "TBA"}, {city}</div>
+              <div><strong>Event Start:</strong> {eventStartDate || "TBA"} {eventStartTime}</div>
+              <div><strong>Registration Period:</strong> {regStartDate || "Immediate"} to {regDeadlineDate || "Continuous"}</div>
+              <div>
+                <strong>Configured Competitions ({formConfig.participationTypes?.length || 0}):</strong>
+                <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+                  {(formConfig.participationTypes || []).map((pt) => (
+                    <span key={pt.id} style={{ background: "#EDE9FE", color: "#6D28D9", padding: "6px 12px", borderRadius: 8, fontSize: 13, fontWeight: 800 }}>
+                      {pt.name}: ₹{pt.fee} ({pt.isActive !== false ? "Enabled" : "Disabled"})
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginTop: 8, paddingTop: 14, borderTop: "1px solid #E2E8F0" }}>
+                <strong>Calculated Public Status:</strong>{" "}
+                <span style={{ padding: "4px 10px", borderRadius: 6, background: previewLifecycle.badgeBg, color: previewLifecycle.badgeColor, fontWeight: 900, fontSize: 12 }}>
+                  {previewLifecycle.label}
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -714,7 +1276,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, paddingTop: 20, borderTop: "1px solid #E2E8F0" }}>
           <button
             type="button"
-            disabled={activeStep === 1}
+            disabled={activeStep === 1 || isSubmitting}
             onClick={() => setActiveStep((prev) => Math.max(1, prev - 1))}
             style={{
               display: "flex",
@@ -727,7 +1289,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
               border: "1px solid #CBD5E1",
               fontWeight: 800,
               fontSize: 13.5,
-              cursor: activeStep === 1 ? "not-allowed" : "pointer",
+              cursor: activeStep === 1 || isSubmitting ? "not-allowed" : "pointer",
             }}
           >
             <ChevronLeft size={16} /> Back
@@ -736,19 +1298,20 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
           <div style={{ display: "flex", gap: 12 }}>
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => handleSubmit(false)}
               style={{
                 padding: "10px 20px",
                 borderRadius: 12,
                 background: "#F1F5F9",
                 color: "#334155",
-                border: "none",
+                border: "1px solid #CBD5E1",
                 fontWeight: 800,
                 fontSize: 13.5,
-                cursor: "pointer",
+                cursor: isSubmitting ? "not-allowed" : "pointer",
               }}
             >
-              Save Draft
+              {isSubmitting ? "Saving Draft..." : "Save Draft"}
             </button>
 
             {activeStep < 6 ? (
@@ -787,11 +1350,12 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                   border: "none",
                   fontWeight: 900,
                   fontSize: 14,
-                  cursor: "pointer",
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
                   boxShadow: "0 4px 14px rgba(22, 163, 74, 0.3)",
+                  opacity: isSubmitting ? 0.7 : 1,
                 }}
               >
-                <CheckCircle2 size={18} /> {isSubmitting ? "Publishing..." : "Publish Event"}
+                <CheckCircle2 size={18} /> {isSubmitting ? "Saving to Supabase..." : "Publish Event"}
               </button>
             )}
           </div>

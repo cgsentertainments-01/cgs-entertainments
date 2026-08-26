@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { EventFormConfig, getDefaultFormConfig } from "@/types/event-config";
+import { getEventLifecycleStatus, LifecycleInfo, isUpcomingEvent, isPublishedEvent, isDraftEvent } from "@/lib/event-lifecycle";
 
 export interface EventItem {
   id: string;
@@ -64,10 +65,29 @@ export interface EventItem {
   homepage_settings?: any;
   form_config?: EventFormConfig;
   status: string;
+  event_type?: 'published' | 'upcoming';
+  lifecycle?: LifecycleInfo;
   is_featured?: boolean;
   is_published: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+/**
+ * Deduplicates participation types by normalized name/id to prevent duplicate Solo/Duo/Group blocks.
+ */
+export function deduplicateParticipationTypes(types?: any[]): any[] {
+  if (!Array.isArray(types)) return [];
+  const seen = new Set<string>();
+  const result: any[] = [];
+  for (const pt of types) {
+    if (!pt) continue;
+    const key = (pt.name || pt.id || "").trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(pt);
+  }
+  return result;
 }
 
 // Transform raw Supabase event record to standard UI Event format
@@ -142,12 +162,19 @@ export function transformDbEvent(evt: any): EventItem {
 
   const extra = (parsedFormConfig && parsedFormConfig.extra) ? parsedFormConfig.extra : {};
 
-  if (!parsedFormConfig || !parsedFormConfig.participationTypes || parsedFormConfig.participationTypes.length === 0) {
+  // Handle form_config participation types without duplicate appending
+  if (parsedFormConfig && Array.isArray(parsedFormConfig.participationTypes) && parsedFormConfig.participationTypes.length > 0) {
+    parsedFormConfig.participationTypes = deduplicateParticipationTypes(parsedFormConfig.participationTypes);
+  } else {
     const defaultCfg = getDefaultFormConfig(categoryName, feeNum);
     parsedFormConfig = parsedFormConfig ? { ...defaultCfg, ...parsedFormConfig } : defaultCfg;
+    parsedFormConfig.participationTypes = deduplicateParticipationTypes(parsedFormConfig.participationTypes);
   }
 
   const rulesText = evt.rules_regulations || extra.rules_regulations || evt.rules || evt.terms_conditions || "";
+
+  // Derive centralized lifecycle status
+  const lifecycle = getEventLifecycleStatus(evt);
 
   return {
     id: String(evt.id),
@@ -211,7 +238,9 @@ export function transformDbEvent(evt: any): EventItem {
     seo: evt.seo || extra.seo || { title: evt.title, description: evt.short_description || evt.title },
     homepage_settings: evt.homepage_settings || extra.homepage_settings || { show_on_homepage: true, is_featured: Boolean(evt.is_featured) },
     form_config: parsedFormConfig,
-    status: evt.status || "registration_open",
+    status: evt.status || lifecycle.status.toLowerCase(),
+    event_type: isUpcomingEvent(evt) ? 'upcoming' : 'published',
+    lifecycle,
     is_featured: Boolean(evt.is_featured),
     is_published: evt.is_published !== undefined ? Boolean(evt.is_published) : true,
     created_at: evt.created_at,

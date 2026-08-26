@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Users,
   Search,
@@ -45,7 +46,10 @@ interface EventOption {
   title: string;
 }
 
-export default function AdminParticipantsPage() {
+function AdminParticipantsContent() {
+  const searchParams = useSearchParams();
+  const initialEventId = searchParams.get("eventId") || searchParams.get("event_id") || "all";
+
   const [participants, setParticipants] = useState<ParticipantItem[]>([]);
   const [eventsList, setEventsList] = useState<EventOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +57,7 @@ export default function AdminParticipantsPage() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedEventId, setSelectedEventId] = useState<string>("all");
+  const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId);
   const [selectedCompetition, setSelectedCompetition] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedRound, setSelectedRound] = useState<string>("all");
@@ -63,11 +67,15 @@ export default function AdminParticipantsPage() {
   // Selected participant for drawer view
   const [selectedParticipant, setSelectedParticipant] = useState<ParticipantItem | null>(null);
 
-  const fetchParticipants = async () => {
+  const fetchParticipants = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/participants", { cache: "no-store" });
+      const url = selectedEventId && selectedEventId !== "all"
+        ? `/api/participants?eventId=${encodeURIComponent(selectedEventId)}`
+        : "/api/participants";
+
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setParticipants(data.participants || []);
@@ -83,11 +91,11 @@ export default function AdminParticipantsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedEventId]);
 
   useEffect(() => {
     fetchParticipants();
-  }, []);
+  }, [fetchParticipants]);
 
   const filteredParticipants = participants.filter((p) => {
     // Search filter
@@ -356,5 +364,13 @@ export default function AdminParticipantsPage() {
         onClose={() => setSelectedParticipant(null)}
       />
     </div>
+  );
+}
+
+export default function AdminParticipantsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#64748B" }}>Loading participants workspace...</div>}>
+      <AdminParticipantsContent />
+    </Suspense>
   );
 }

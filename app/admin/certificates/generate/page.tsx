@@ -1,7 +1,5 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Award, ArrowLeft, RefreshCw, Sparkles, Filter, CheckCircle2, AlertCircle, Eye, Download, ShieldCheck } from "lucide-react";

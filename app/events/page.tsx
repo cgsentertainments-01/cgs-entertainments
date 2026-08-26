@@ -16,6 +16,7 @@ import {
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { EventCard } from "@/components/events/EventCard";
+import { isPublishedEvent } from "@/lib/event-lifecycle";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -84,7 +85,7 @@ function EventsPageContent() {
       setError(false);
 
       const [evtRes, catRes] = await Promise.all([
-        fetch("/api/events?upcoming=true", { cache: "no-store" }),
+        fetch("/api/events?type=published", { cache: "no-store" }),
         fetch("/api/categories", { cache: "no-store" }),
       ]);
 
@@ -147,6 +148,10 @@ function EventsPageContent() {
       return evtDate.getTime() >= today.getTime() && evtDate.getTime() <= nextWeek.getTime();
     }
 
+    if (filter === "Past" || filter === "Completed") {
+      return evtDate.getTime() < today.getTime();
+    }
+
     if (filter === "This Month") {
       const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
       return evtDate.getTime() >= today.getTime() && evtDate.getTime() <= endOfMonth.getTime();
@@ -158,6 +163,7 @@ function EventsPageContent() {
   // Multi-faceted Filtering logic
   const filteredEvents = useMemo(() => {
     return events.filter((e) => {
+      if (!isPublishedEvent(e)) return false;
       // 1. Category Filter
       const catName = e.category || e.category_name || e.badge || "";
       const matchesCat =

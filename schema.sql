@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS public.events (
     max_participants INT CHECK (max_participants IS NULL OR max_participants > 0),
     current_participants INT NOT NULL DEFAULT 0 CHECK (current_participants >= 0),
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'registration_open', 'registration_closed', 'ongoing', 'completed', 'cancelled')),
+    event_type TEXT NOT NULL DEFAULT 'published' CHECK (event_type IN ('published', 'upcoming')),
     is_featured BOOLEAN NOT NULL DEFAULT false,
     is_published BOOLEAN NOT NULL DEFAULT false,
     terms_conditions TEXT,

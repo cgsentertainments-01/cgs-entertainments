@@ -34,7 +34,8 @@ import {
   Check,
   Sparkles,
 } from "lucide-react";
-import { EventItem, getEventByIdOrSlug, normalizeEventIdentifier } from "@/services/event.service";
+import { EventItem, getEventByIdOrSlug, normalizeEventIdentifier, deduplicateParticipationTypes } from "@/services/event.service";
+import { getEventLifecycleStatus } from "@/lib/event-lifecycle";
 import {
   EventFormConfig,
   getDefaultFormConfig,
@@ -223,9 +224,10 @@ export default function DynamicRegistrationPage() {
     return getDefaultFormConfig(evt?.category || "Dance", evt?.registration_fee);
   }, [evt]);
 
-  // Active participation types
+  // Active participation types (deduplicated)
   const activeParticipationTypes = useMemo(() => {
-    return (formConfig.participationTypes || []).filter((pt) => pt.isActive !== false);
+    const list = (formConfig.participationTypes || []).filter((pt) => pt.isActive !== false);
+    return deduplicateParticipationTypes(list);
   }, [formConfig]);
 
   // Selected participation type state
@@ -445,6 +447,7 @@ export default function DynamicRegistrationPage() {
   // Check Registration Availability
   const isRegistrationClosed = useMemo(() => {
     if (!evt) return false;
+    if (evt.event_type === "upcoming") return true;
     if (!evt.is_published) return true;
     const st = String(evt.status || "").toLowerCase();
     if (
@@ -473,6 +476,15 @@ export default function DynamicRegistrationPage() {
 
   // Validation function per step
   const validateStep = (step: number): boolean => {
+    setErrorMsg(null);
+
+    // Lifecycle validation check
+    const lifecycle = evt ? (evt.lifecycle || getEventLifecycleStatus(evt)) : null;
+    if (lifecycle && !lifecycle.ctaEnabled) {
+      setErrorMsg(`Registrations for this event are not available: ${lifecycle.message}`);
+      return false;
+    }
+
     if (isRegistrationClosed) {
       setErrorMsg("Registrations for this event are currently closed.");
       return false;

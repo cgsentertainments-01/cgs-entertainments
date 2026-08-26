@@ -1,9 +1,8 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Award,
   Search,
@@ -132,7 +131,10 @@ interface Counters {
   achievement: number;
 }
 
-export default function AdminCertificatesDashboardPage() {
+function AdminCertificatesDashboardContent() {
+  const searchParams = useSearchParams();
+  const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,7 +158,7 @@ export default function AdminCertificatesDashboardPage() {
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
-  const [eventFilter, setEventFilter] = useState("all");
+  const [eventFilter, setEventFilter] = useState(eventIdParam || "all");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -182,7 +184,7 @@ export default function AdminCertificatesDashboardPage() {
   // Guided Certificate Issuance Workflow Modal State
   const [showIssueWorkflow, setShowIssueWorkflow] = useState(false);
   const [workflowStep, setWorkflowStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
-  const [wfSelectedEventId, setWfSelectedEventId] = useState<string>("all");
+  const [wfSelectedEventId, setWfSelectedEventId] = useState<string>(eventIdParam || "all");
   const [wfSelectedCompId, setWfSelectedCompId] = useState<string>("all");
   const [wfSelectedRound, setWfSelectedRound] = useState<string>("Final Round");
   const [wfSelectedResultType, setWfSelectedResultType] = useState<string>("all");
@@ -217,12 +219,16 @@ export default function AdminCertificatesDashboardPage() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const fetchCertificatesData = async () => {
+  const fetchCertificatesData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const res = await fetch("/api/certificates", { cache: "no-store" });
+      const url = eventIdParam && eventIdParam !== "all"
+        ? `/api/certificates?eventId=${encodeURIComponent(eventIdParam)}`
+        : "/api/certificates";
+
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -241,7 +247,7 @@ export default function AdminCertificatesDashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [eventIdParam]);
 
   useEffect(() => {
     fetchCertificatesData();
@@ -1770,5 +1776,13 @@ export default function AdminCertificatesDashboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AdminCertificatesDashboardPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#64748B" }}>Loading certificates workspace...</div>}>
+      <AdminCertificatesDashboardContent />
+    </Suspense>
   );
 }

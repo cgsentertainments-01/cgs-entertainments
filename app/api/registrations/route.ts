@@ -665,6 +665,7 @@ export async function GET(request: Request) {
     const pageParam = parseInt(searchParams.get("page") || "0", 10);
     const limitParam = parseInt(searchParams.get("limit") || "0", 10);
     const statusParam = searchParams.get("status");
+    const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
 
     // Try full select query with structured columns first
     let query = supabase
@@ -680,6 +681,10 @@ export async function GET(request: Request) {
         dance_styles ( id, name ),
         registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
       `, pageParam > 0 && limitParam > 0 ? { count: "exact" } : undefined);
+
+    if (eventIdParam && eventIdParam !== "all") {
+      query = query.eq("event_id", eventIdParam);
+    }
 
     if (statusParam && statusParam !== "all") {
       query = query.eq("registration_status", statusParam);

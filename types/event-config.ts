@@ -71,6 +71,7 @@ export interface EventFormConfig {
   documents: DocumentConfig[];
   competitions?: any[];
   feeStructure?: Record<string, any>;
+  extra?: Record<string, any>;
 }
 
 /**

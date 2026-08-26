@@ -25,6 +25,7 @@ export interface Event {
   registration_fee: number;
   currency?: string;
   status: 'published' | 'draft' | 'closed';
+  event_type?: 'published' | 'upcoming';
   seats_available?: number;
   age_group?: string;
   description?: string;

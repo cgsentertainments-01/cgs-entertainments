@@ -78,6 +78,7 @@ export async function GET(request: Request) {
     const pageParam = parseInt(searchParams.get("page") || "0", 10);
     const limitParam = parseInt(searchParams.get("limit") || "0", 10);
     const searchVal = (searchParams.get("search") || "").trim().toLowerCase();
+    const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
 
     // 1. Fetch all events for filter dropdowns
     const { data: allEventsData } = await supabase
@@ -95,6 +96,10 @@ export async function GET(request: Request) {
       .from("registrations")
       .select("id, registration_number, event_id, participant_id, category_id, dance_style_id, registration_status, payment_status, registration_date, amount, notes, document_urls, created_at")
       .order("created_at", { ascending: false });
+
+    if (eventIdParam && eventIdParam !== "all") {
+      regQuery = regQuery.eq("event_id", eventIdParam);
+    }
 
     const { data: registrations, error: regErr } = await regQuery;
 

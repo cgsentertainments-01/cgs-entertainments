@@ -17,6 +17,7 @@ import {
   Flame,
 } from "lucide-react";
 import { EventCard } from "@/components/events/EventCard";
+import { isUpcomingEvent, isPublishedEvent } from "@/lib/event-lifecycle";
 
 export type EventHubItem = {
   id: string;
@@ -55,21 +56,7 @@ const MOCK_FEATURED_EVENT: EventHubItem = {
 };
 
 const MOCK_UPCOMING_EVENTS: EventHubItem[] = [
-  {
-    id: "upcoming-1",
-    title: "National Modeling League 2026",
-    slug: "national-modeling-league-2026",
-    badge: "MODELING",
-    badgeBg: "#2563EB",
-    date: "18 Oct 2026",
-    rawDate: "2026-10-18",
-    location: "HICC Novotel, Hyderabad",
-    venue: "HICC Novotel",
-    city: "Hyderabad",
-    img: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=85",
-    short_description: "Walk the runway of excellence & fashion.",
-    registrationFee: 999,
-  },
+
   {
     id: "upcoming-2",
     title: "CGS Voice Star Idol 2026",
@@ -210,7 +197,7 @@ export function DiscoverEventHub() {
     async function loadEvents() {
       try {
         setLoading(true);
-        const res = await fetch("/api/events?upcoming=true", { cache: "no-store" });
+        const res = await fetch("/api/events?all=true", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (isMounted && data.events && data.events.length > 0) {
@@ -230,13 +217,25 @@ export function DiscoverEventHub() {
     };
   }, []);
 
-  // Combined list including mock fallback if API returns empty
-  const allAvailableEvents = useMemo(() => {
-    if (events.length > 0) return events;
-    return [MOCK_FEATURED_EVENT, ...MOCK_UPCOMING_EVENTS];
+  // Published Events vs Upcoming Events
+  const publishedEvents = useMemo(() => {
+    const list = events.filter((e: any) => isPublishedEvent(e));
+    if (list.length > 0) return list;
+    return [MOCK_FEATURED_EVENT];
   }, [events]);
 
-  // Unique Cities extracted from available events
+  const upcomingEventsRaw = useMemo(() => {
+    const list = events.filter((e: any) => isUpcomingEvent(e));
+    if (list.length > 0) return list;
+    return MOCK_UPCOMING_EVENTS;
+  }, [events]);
+
+  // Combined list for search & category filtering
+  const allAvailableEvents = useMemo(() => {
+    return publishedEvents;
+  }, [publishedEvents]);
+
+  // Unique Cities extracted from published events
   const uniqueCities = useMemo(() => {
     const set = new Set<string>();
     allAvailableEvents.forEach((e) => {
@@ -246,7 +245,7 @@ export function DiscoverEventHub() {
     return Array.from(set).sort();
   }, [allAvailableEvents]);
 
-  // Filtered events list
+  // Filtered published events list
   const filteredEvents = useMemo(() => {
     return allAvailableEvents.filter((evt) => {
       // 1. Category Pill Filter
@@ -288,16 +287,15 @@ export function DiscoverEventHub() {
     });
   }, [allAvailableEvents, selectedCategory, search, selectedCity, selectedDateFilter]);
 
-  // Separate Featured vs Upcoming
+  // Separate Featured vs Main List
   const featuredEvent = useMemo(() => {
     const explicitlyFeatured = filteredEvents.find((e) => e.is_featured);
     return explicitlyFeatured || filteredEvents[0] || MOCK_FEATURED_EVENT;
   }, [filteredEvents]);
 
   const upcomingList = useMemo(() => {
-    if (!featuredEvent) return filteredEvents;
-    return filteredEvents.filter((e) => e.id !== featuredEvent.id);
-  }, [filteredEvents, featuredEvent]);
+    return upcomingEventsRaw;
+  }, [upcomingEventsRaw]);
 
   const hasActiveFilters =
     search.trim() !== "" || selectedCategory !== "All" || selectedCity !== "All" || selectedDateFilter !== "All";

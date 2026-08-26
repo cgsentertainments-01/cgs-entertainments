@@ -26,6 +26,7 @@ import {
   DocumentUploadType,
 } from "@/types/event-config";
 import { AdminFormPreviewModal } from "./AdminFormPreviewModal";
+import { deduplicateParticipationTypes } from "@/services/event.service";
 
 interface FormConfigEditorProps {
   formConfig: EventFormConfig;
@@ -353,7 +354,7 @@ export function FormConfigEditor({
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {(formConfig.participationTypes || []).map((pt, idx) => (
+            {deduplicateParticipationTypes(formConfig.participationTypes || []).map((pt, idx) => (
               <div
                 key={pt.id || idx}
                 style={{

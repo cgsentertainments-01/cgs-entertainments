@@ -25,14 +25,21 @@ export async function GET(request: Request) {
     const limit = Math.max(1, Math.min(100, parseInt(searchParams.get("limit") || "20", 10)));
     const status = searchParams.get("status") || "all";
     const typeFilter = searchParams.get("type") || "all";
+    const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
 
     // 1. Unread count query
     let unreadCount = 0;
     try {
-      const { count, error: countErr } = await supabase
+      let countQuery = supabase
         .from("notifications")
         .select("*", { count: "exact", head: true })
         .eq("is_read", false);
+
+      if (eventIdParam && eventIdParam !== "all") {
+        countQuery = countQuery.or(`entity_id.eq.${eventIdParam},reference_id.eq.${eventIdParam}`);
+      }
+
+      const { count, error: countErr } = await countQuery;
 
       if (!countErr && count !== null) {
         unreadCount = count;
@@ -46,6 +53,10 @@ export async function GET(request: Request) {
       .from("notifications")
       .select("*", { count: "exact" })
       .order("created_at", { ascending: false });
+
+    if (eventIdParam && eventIdParam !== "all") {
+      query = query.or(`entity_id.eq.${eventIdParam},reference_id.eq.${eventIdParam}`);
+    }
 
     if (status === "unread") {
       query = query.eq("is_read", false);

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   CreditCard,
   Search,
@@ -46,7 +47,10 @@ interface AdminRegistration {
   };
 }
 
-export default function AdminPaymentsPage() {
+function AdminPaymentsContent() {
+  const searchParams = useSearchParams();
+  const eventIdParam = searchParams.get("eventId") || searchParams.get("event_id");
+
   const [registrations, setRegistrations] = useState<AdminRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +61,11 @@ export default function AdminPaymentsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/registrations");
+      const url = eventIdParam && eventIdParam !== "all"
+        ? `/api/registrations?eventId=${encodeURIComponent(eventIdParam)}`
+        : "/api/registrations";
+
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -71,7 +79,7 @@ export default function AdminPaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [eventIdParam]);
 
   useEffect(() => {
     fetchPayments();
@@ -396,5 +404,13 @@ export default function AdminPaymentsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminPaymentsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#64748B" }}>Loading payments workspace...</div>}>
+      <AdminPaymentsContent />
+    </Suspense>
   );
 }
