@@ -40,7 +40,7 @@ interface RegistrationRecord {
     venue?: string;
     city?: string;
     address?: string;
-    category?: string;
+    category?: { name: string } | { name: string }[] | string | null;
   } | null;
   category: { name: string } | null;
 }
@@ -174,7 +174,9 @@ export default function MyRegistrationsPage() {
             venue,
             city,
             address,
-            category
+            category:event_categories (
+              name
+            )
           ),
           category:event_categories (
             name
@@ -204,7 +206,9 @@ export default function MyRegistrationsPage() {
               venue,
               city,
               address,
-              category
+              category:event_categories (
+                name
+              )
             ),
             category:event_categories (
               name
@@ -419,7 +423,17 @@ export default function MyRegistrationsPage() {
               const badge = statusBadge(reg.registration_status);
               const eventTitle = reg.event?.title || "Untitled Event";
               const eventSlug = reg.event?.slug || reg.event?.id || "";
-              const categoryName = reg.category?.name || reg.event?.category || "General";
+              let catName = reg.category?.name;
+              if (!catName && reg.event?.category) {
+                if (typeof reg.event.category === "string") {
+                  catName = reg.event.category;
+                } else if (Array.isArray(reg.event.category) && reg.event.category.length > 0) {
+                  catName = reg.event.category[0]?.name;
+                } else if (typeof reg.event.category === "object" && (reg.event.category as any).name) {
+                  catName = (reg.event.category as any).name;
+                }
+              }
+              const categoryName = catName || "General";
               const eventDate = reg.event?.event_date;
               const venue =
                 reg.event?.venue && reg.event?.city

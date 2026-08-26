@@ -84,12 +84,16 @@ export async function POST(req: Request) {
     let targetRegistration: any = null;
 
     if (supabase) {
-      // Primary lookup by registrationId
-      if (registrationId && isValidUUID(registrationId)) {
+      // Primary lookup by registrationId (UUID or registration_number or qr_token)
+      if (registrationId) {
+        const filterParts = [`registration_number.eq.${registrationId}`, `qr_token.eq.${registrationId}`];
+        if (isValidUUID(registrationId)) {
+          filterParts.unshift(`id.eq.${registrationId}`);
+        }
         const { data: regById } = await supabase
           .from('registrations')
           .select('*')
-          .eq('id', registrationId)
+          .or(filterParts.join(','))
           .maybeSingle();
         if (regById) targetRegistration = regById;
       }

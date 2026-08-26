@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function isValidUUID(val: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -16,6 +20,12 @@ export async function GET(
   }
 
   try {
+    const cleanId = decodeURIComponent(id).trim();
+    const filterParts = [`registration_number.eq.${cleanId}`, `qr_token.eq.${cleanId}`];
+    if (isValidUUID(cleanId)) {
+      filterParts.unshift(`id.eq.${cleanId}`);
+    }
+
     const { data: reg, error } = await supabase
       .from("registrations")
       .select(`
@@ -26,7 +36,7 @@ export async function GET(
         dance_styles ( id, name ),
         registration_payments ( id, razorpay_order_id, razorpay_payment_id, status, paid_at, amount )
       `)
-      .or(`id.eq.${id},registration_number.eq.${id},qr_token.eq.${id}`)
+      .or(filterParts.join(","))
       .maybeSingle();
 
     if (error) {

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function isValidUUID(val: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -24,6 +28,11 @@ export async function GET(
 
   try {
     const decodedToken = decodeURIComponent(token).trim();
+
+    const filterParts = [`qr_token.eq.${decodedToken}`, `registration_number.eq.${decodedToken}`];
+    if (isValidUUID(decodedToken)) {
+      filterParts.push(`id.eq.${decodedToken}`);
+    }
 
     // Query registration by qr_token, registration_number, or id
     const { data: reg, error } = await supabase
@@ -75,7 +84,7 @@ export async function GET(
           amount
         )
       `)
-      .or(`qr_token.eq.${decodedToken},registration_number.eq.${decodedToken},id.eq.${decodedToken}`)
+      .or(filterParts.join(","))
       .maybeSingle();
 
     if (error) {
@@ -145,7 +154,7 @@ export async function GET(
 
     const paymentId = isFree
       ? "N/A (Free Registration)"
-      : latestPayment?.razorpay_payment_id || "pay_verified";
+      : latestPayment?.razorpay_payment_id || "Not available";
 
     const paymentStatusText = isFree
       ? "FREE REGISTRATION"

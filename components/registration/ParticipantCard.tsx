@@ -129,7 +129,7 @@ export function ParticipantCard({
               display: "inline-block",
             }}
           >
-            PASS #{registrationNumber || "CGS-REG-CONFIRMED"}
+            PASS #{registrationNumber || "CONFIRMED"}
           </span>
         </div>
       </div>

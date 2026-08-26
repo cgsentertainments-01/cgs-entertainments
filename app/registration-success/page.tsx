@@ -19,6 +19,7 @@ function RegistrationSuccessContent() {
     "";
 
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [regData, setRegData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,27 +62,69 @@ function RegistrationSuccessContent() {
   }
 
   const participantName = regData?.participants?.full_name || "Valued Participant";
-  const participantNumber = regData?.participants?.participant_number || "CGS-P-REGIST";
-  const regNumber = regData?.registration_number || regId || "CGS-REG-CONFIRMED";
+  const participantNumber =
+    regData?.participants?.participant_number ||
+    (regData?.participants?.id ? `ID: ${regData.participants.id.substring(0, 8)}...` : "Not available");
+  const regNumber = regData?.registration_number || regData?.id || regId || "Not available";
   const eventTitle = regData?.events?.title || "CGS Entertainments Event";
   const eventDate = regData?.events?.event_date
     ? new Date(regData.events.event_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
     : "Event Date TBA";
   const eventCity = regData?.events?.city || "Hyderabad";
   const categoryName = regData?.event_categories?.name || regData?.dance_styles?.name || "Participant";
-  const amountPaid = regData?.amount !== undefined ? `₹${regData.amount}` : "Paid";
+  const isFreeEvent = regData?.amount !== undefined && Number(regData.amount) === 0;
+  const amountPaid = regData?.amount !== undefined ? (isFreeEvent ? "₹0 (Free)" : `₹${regData.amount}`) : "Paid";
   const statusBadge = (regData?.registration_status || "confirmed").toUpperCase();
-  const qrToken = regData?.qr_token || regNumber;
-  const paymentId =
-    regData?.registration_payments?.[0]?.razorpay_payment_id ||
-    regData?.registration_payments?.razorpay_payment_id ||
-    regData?.razorpay_payment_id ||
-    "pay_verified";
+  const qrToken = regData?.qr_token || regData?.id || regNumber;
+  const paymentId = isFreeEvent
+    ? "N/A (Free Registration)"
+    : regData?.registration_payments?.[0]?.razorpay_payment_id ||
+      regData?.registration_payments?.razorpay_payment_id ||
+      regData?.razorpay_payment_id ||
+      "Not available";
   const photoUrl = regData?.participants?.profile_photo;
+
+  const handleDownloadReceipt = async () => {
+    const receipt = document.getElementById("registration-receipt");
+    if (!receipt) return;
+
+    try {
+      setDownloading(true);
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      const canvas = await html2canvas(receipt, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      const pdfWidth = 210; // A4 width in mm
+      const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+
+      const pdf = new jsPDF({
+        orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
+        unit: "mm",
+        format: [pdfWidth, pdfHeight],
+      });
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Receipt-${regNumber}.pdf`);
+    } catch (err) {
+      console.error("Error downloading receipt PDF:", err);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 720, margin: "40px auto 60px", padding: "0 24px" }}>
       <div
+        id="registration-receipt"
         style={{
           background: "#fff",
           border: "1.5px solid #E5E7EB",
@@ -198,7 +241,7 @@ function RegistrationSuccessContent() {
         </div>
 
         {/* Live Scannable Participant ID Card */}
-        <div style={{ marginBottom: 28 }}>
+        <div>
           <ParticipantCard
             registrationNumber={regNumber}
             participantName={participantName}
@@ -215,63 +258,65 @@ function RegistrationSuccessContent() {
             showScanLabel={true}
           />
         </div>
+      </div>
 
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <Link
-            href="/my-registrations"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 22px",
-              background: "#6D28D9",
-              color: "#fff",
-              borderRadius: 12,
-              fontSize: 14,
-              fontWeight: 800,
-              textDecoration: "none",
-            }}
-          >
-            View Registration
-          </Link>
-          <button
-            onClick={() => window.print()}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 22px",
-              background: "#F3E8FF",
-              color: "#6D28D9",
-              border: "1.5px solid #C4B5FD",
-              borderRadius: 12,
-              fontSize: 14,
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            <Download size={16} /> Download Receipt
-          </button>
-          <Link
-            href="/"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "12px 22px",
-              background: "#fff",
-              color: "#374151",
-              border: "1.5px solid #E5E7EB",
-              borderRadius: 12,
-              fontSize: 14,
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Back to Home <ChevronRight size={16} />
-          </Link>
-        </div>
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginTop: 24 }}>
+        <Link
+          href="/my-registrations"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 22px",
+            background: "#6D28D9",
+            color: "#fff",
+            borderRadius: 12,
+            fontSize: 14,
+            fontWeight: 800,
+            textDecoration: "none",
+          }}
+        >
+          View Registration
+        </Link>
+        <button
+          onClick={handleDownloadReceipt}
+          disabled={downloading}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 22px",
+            background: "#F3E8FF",
+            color: "#6D28D9",
+            border: "1.5px solid #C4B5FD",
+            borderRadius: 12,
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: downloading ? "not-allowed" : "pointer",
+            opacity: downloading ? 0.7 : 1,
+          }}
+        >
+          <Download size={16} /> {downloading ? "Generating PDF..." : "Download Receipt"}
+        </button>
+        <Link
+          href="/"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "12px 22px",
+            background: "#fff",
+            color: "#374151",
+            border: "1.5px solid #E5E7EB",
+            borderRadius: 12,
+            fontSize: 14,
+            fontWeight: 700,
+            textDecoration: "none",
+          }}
+        >
+          Back to Home <ChevronRight size={16} />
+        </Link>
       </div>
     </div>
   );
