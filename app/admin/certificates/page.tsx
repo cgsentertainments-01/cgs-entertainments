@@ -99,6 +99,8 @@ interface EligibleRegistration {
   competition_name: string;
   participation_type: string;
   result_type: string;
+  position?: number | null;
+  score?: number | null;
   is_eligible: boolean;
   already_has_cert: boolean;
   certificate_type: string | null;
@@ -245,6 +247,9 @@ export default function AdminCertificatesDashboardPage() {
     fetchCertificatesData();
   }, []);
 
+  // Main View Mode Tab ("eligible" | "issued" | "all")
+  const [activeViewTab, setActiveViewTab] = useState<"eligible" | "issued" | "all">("eligible");
+
   // Filtered Certificates for Main Table
   const filteredCertificates = certificates.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
@@ -265,6 +270,28 @@ export default function AdminCertificatesDashboardPage() {
     const matchesDate = !issueDateFilter || (c.issued_at && c.issued_at.startsWith(issueDateFilter));
 
     return matchesSearch && matchesEvent && matchesComp && matchesType && matchesResult && matchesStatus && matchesDate;
+  });
+
+  // Filtered Eligible Winners / Results for Eligible Tab
+  const filteredEligibleRegs = eligibleRegs.filter((r) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      r.participant_name.toLowerCase().includes(q) ||
+      r.participant_number.toLowerCase().includes(q) ||
+      r.registration_number.toLowerCase().includes(q) ||
+      r.event_title.toLowerCase().includes(q) ||
+      r.category_name.toLowerCase().includes(q);
+
+    const matchesEvent = eventFilter === "all" || r.event_title === eventFilter;
+    const matchesComp = competitionFilter === "all" || r.category_name === competitionFilter;
+    const matchesResult = resultFilter === "all" || r.result_type === resultFilter;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "issued" && r.already_has_cert) ||
+      (statusFilter === "pending" && !r.already_has_cert);
+
+    return matchesSearch && matchesEvent && matchesComp && matchesResult && matchesStatus && r.is_eligible;
   });
 
   // Open Certificate Details Drawer
@@ -293,6 +320,20 @@ export default function AdminCertificatesDashboardPage() {
     // Default matching template
     const defaultTpl = templates.find((t) => t.is_default || t.is_active !== false) || templates[0] || null;
     setWfSelectedTemplate(defaultTpl);
+    setShowIssueWorkflow(true);
+  };
+
+  // Quick 1-Click Issue Certificate for an Eligible Winner
+  const handleQuickIssueCertificate = (reg: EligibleRegistration) => {
+    setWorkflowStep(5);
+    setWfSelectedEventId(reg.event_title);
+    setWfSelectedCompId(reg.category_name);
+    setWfSelectedRegs([reg]);
+    setWfSelectedCertType(reg.certificate_type || "winner");
+
+    const defaultTpl = templates.find((t) => t.is_default || t.is_active !== false) || templates[0] || null;
+    setWfSelectedTemplate(defaultTpl);
+    initializeCanvasElements(reg, reg.certificate_type || "winner");
     setShowIssueWorkflow(true);
   };
 
@@ -783,192 +824,357 @@ export default function AdminCertificatesDashboardPage() {
         </div>
       )}
 
-      {/* ── 3. CERTIFICATE TABLE ── */}
+      {/* ── VIEW MODE TAB SWITCHER BAR ── */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, borderBottom: "2px solid #E2E8F0", paddingBottom: 12, overflowX: "auto" }}>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab("eligible")}
+          style={{
+            padding: "10px 20px",
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 800,
+            cursor: "pointer",
+            border: "none",
+            background: activeViewTab === "eligible" ? "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)" : "#F1F5F9",
+            color: activeViewTab === "eligible" ? "#ffffff" : "#475569",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: activeViewTab === "eligible" ? "0 4px 14px rgba(124,58,237,0.25)" : "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Award size={16} /> Eligible Winners &amp; Results ({eligibleRegs.filter((r) => r.is_eligible).length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveViewTab("issued")}
+          style={{
+            padding: "10px 20px",
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 800,
+            cursor: "pointer",
+            border: "none",
+            background: activeViewTab === "issued" ? "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)" : "#F1F5F9",
+            color: activeViewTab === "issued" ? "#ffffff" : "#475569",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: activeViewTab === "issued" ? "0 4px 14px rgba(124,58,237,0.25)" : "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <CheckCircle2 size={16} /> Issued Certificates ({certificates.filter((c) => c.status === "issued").length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveViewTab("all")}
+          style={{
+            padding: "10px 20px",
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 800,
+            cursor: "pointer",
+            border: "none",
+            background: activeViewTab === "all" ? "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)" : "#F1F5F9",
+            color: activeViewTab === "all" ? "#ffffff" : "#475569",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: activeViewTab === "all" ? "0 4px 14px rgba(124,58,237,0.25)" : "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Layers size={16} /> All System Credentials ({certificates.length})
+        </button>
+      </div>
+
+      {/* ── 3. CERTIFICATE TABLE / ELIGIBLE WINNERS TABLE ── */}
       <div style={{ background: "#ffffff", borderRadius: 20, border: "1.5px solid #E2E8F0", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-        {loading ? (
-          <div style={{ padding: 60, textAlign: "center", color: "#6B7280", fontWeight: 700 }}>
-            Loading certificates from database...
-          </div>
-        ) : filteredCertificates.length === 0 ? (
-          /* ── 16. PROFESSIONAL EMPTY STATES ── */
-          <div style={{ padding: "60px 24px", textAlign: "center", color: "#64748B" }}>
-            <Award size={48} color="#94A3B8" style={{ margin: "0 auto 14px", opacity: 0.5 }} />
-            <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
-              {certificates.length === 0 ? "No certificates issued yet." : "No certificates found for the selected filters."}
-            </h3>
-            <p style={{ fontSize: 14, color: "#64748B", maxWidth: 440, margin: "0 auto 20px" }}>
-              {certificates.length === 0
-                ? "Select eligible participants from competition results and generate official certificates."
-                : "Try resetting your search or dropdown filter parameters to view matching certificate records."}
-            </p>
-            {certificates.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  setEventFilter("all");
-                  setCompetitionFilter("all");
-                  setTypeFilter("all");
-                  setResultFilter("all");
-                  setStatusFilter("all");
-                  setIssueDateFilter("");
-                }}
-                style={{ padding: "10px 20px", borderRadius: 12, background: "#6D28D9", color: "#fff", border: "none", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
-              >
-                Reset All Filters
-              </button>
+        {activeViewTab === "eligible" ? (
+          /* ── TAB 1: ELIGIBLE WINNERS & RESULTS TABLE ── */
+          <div>
+            {loading ? (
+              <div style={{ padding: 60, textAlign: "center", color: "#6B7280", fontWeight: 700 }}>
+                Loading eligible competition results from database...
+              </div>
+            ) : filteredEligibleRegs.length === 0 ? (
+              <div style={{ padding: "60px 24px", textAlign: "center", color: "#64748B" }}>
+                <Award size={48} color="#CBD5E1" style={{ margin: "0 auto 14px" }} />
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: "#0F172A", margin: "0 0 6px" }}>No Eligible Competition Results Found</h3>
+                <p style={{ fontSize: 13.5, color: "#64748B", margin: 0 }}>
+                  Mark participants as Winners or 1st/2nd/3rd Place in <strong>Admin → Results</strong> to make them appear here automatically.
+                </p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0" }}>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Participant / Team</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Event</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Competition</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Reg ID</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Result</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Rank &amp; Score</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Certificate Status</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase", textAlign: "right" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEligibleRegs.map((reg) => {
+                      const resMeta = formatResultLabel(reg.result_type);
+                      return (
+                        <tr key={reg.registration_id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                          <td style={{ padding: "16px 18px" }}>
+                            <div style={{ fontWeight: 800, color: "#0F172A" }}>{reg.participant_name}</div>
+                            <div style={{ fontSize: 12, color: "#64748B" }}>{reg.participant_number}</div>
+                          </td>
+                          <td style={{ padding: "16px 18px", fontWeight: 700, color: "#334155" }}>{reg.event_title}</td>
+                          <td style={{ padding: "16px 18px", color: "#475569", fontWeight: 600 }}>{reg.category_name}</td>
+                          <td style={{ padding: "16px 18px", fontWeight: 800, color: "#7C3AED", fontFamily: "monospace" }}>{reg.registration_number}</td>
+                          <td style={{ padding: "16px 18px" }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 800, color: resMeta.color, background: resMeta.bg, padding: "4px 10px", borderRadius: 8 }}>
+                              {resMeta.badge}
+                            </span>
+                          </td>
+                          <td style={{ padding: "16px 18px", color: "#334155", fontWeight: 700 }}>
+                            {reg.position ? `#${reg.position}` : "-"} {reg.score !== null && reg.score !== undefined ? `(${reg.score} pts)` : ""}
+                          </td>
+                          <td style={{ padding: "16px 18px" }}>
+                            {reg.already_has_cert ? (
+                              <span style={{ fontSize: 11.5, fontWeight: 900, background: "#ECFDF5", color: "#047857", padding: "4px 10px", borderRadius: 8, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <CheckCircle2 size={13} /> Certificate Issued
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 11.5, fontWeight: 900, background: "#FEF3C7", color: "#B45309", padding: "4px 10px", borderRadius: 8, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <Clock size={13} /> Eligible - Not Issued
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: "16px 18px", textAlign: "right" }}>
+                            {reg.already_has_cert ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const cert = certificates.find((c) => c.registration_id === reg.registration_id);
+                                  if (cert) openDetailsDrawer(cert);
+                                }}
+                                style={{ padding: "6px 12px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 800, color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                <Eye size={13} color="#7C3AED" /> View Certificate
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleQuickIssueCertificate(reg)}
+                                style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)", color: "#fff", border: "none", fontSize: 12, fontWeight: 900, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                <Award size={13} /> Issue Certificate
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 14 }}>
-              <thead>
-                <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0" }}>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Certificate ID</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Participant</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Event</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Competition</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Result</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Certificate Type</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Issued Date</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Status</th>
-                  <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase", textAlign: "right" }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCertificates.map((cert) => {
-                  const resultMeta = formatResultLabel(cert.result_type);
-                  const issueDateStr = cert.issued_at
-                    ? new Date(cert.issued_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-                    : "Draft";
-
-                  return (
-                    <tr
-                      key={cert.id}
-                      style={{
-                        borderBottom: "1px solid #F1F5F9",
-                        transition: "background 0.15s ease",
-                      }}
-                      className="hover:bg-slate-50"
-                    >
-                      <td style={{ padding: "16px 18px", fontWeight: 800, color: "#6D28D9", fontFamily: "monospace" }}>
-                        <button
-                          type="button"
-                          onClick={() => openDetailsDrawer(cert)}
-                          style={{ background: "none", border: "none", padding: 0, color: "#6D28D9", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
-                        >
-                          {cert.certificate_number}
-                        </button>
-                      </td>
-
-                      <td style={{ padding: "16px 18px" }}>
-                        <div style={{ fontWeight: 800, color: "#0F172A" }}>{cert.participant_name}</div>
-                        <div style={{ fontSize: 12, color: "#64748B" }}>{cert.participant_number}</div>
-                      </td>
-
-                      <td style={{ padding: "16px 18px", fontWeight: 700, color: "#334155" }}>
-                        {cert.event_title}
-                      </td>
-
-                      <td style={{ padding: "16px 18px", color: "#475569", fontWeight: 600 }}>
-                        {cert.category_name || cert.competition_name}
-                      </td>
-
-                      <td style={{ padding: "16px 18px" }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: resultMeta.color, background: resultMeta.bg, padding: "4px 10px", borderRadius: 8 }}>
-                          {resultMeta.badge}
-                        </span>
-                      </td>
-
-                      <td style={{ padding: "16px 18px", fontWeight: 700, color: "#0F172A" }}>
-                        {formatCertificateTypeLabel(cert.certificate_type)}
-                      </td>
-
-                      <td style={{ padding: "16px 18px", color: "#64748B", fontWeight: 600 }}>
-                        {issueDateStr}
-                      </td>
-
-                      <td style={{ padding: "16px 18px" }}>
-                        <span
-                          style={{
-                            fontSize: 11.5,
-                            fontWeight: 900,
-                            textTransform: "uppercase",
-                            padding: "4px 10px",
-                            borderRadius: 8,
-                            background:
-                              cert.status === "issued"
-                                ? "#ECFDF5"
-                                : cert.status === "revoked"
-                                ? "#FEF2F2"
-                                : cert.status === "pending"
-                                ? "#EFF6FF"
-                                : "#F8FAFC",
-                            color:
-                              cert.status === "issued"
-                                ? "#047857"
-                                : cert.status === "revoked"
-                                ? "#EF4444"
-                                : cert.status === "pending"
-                                ? "#1D4ED8"
-                                : "#64748B",
-                          }}
-                        >
-                          {cert.status}
-                        </span>
-                      </td>
-
-                      {/* Row Actions */}
-                      <td style={{ padding: "16px 18px", textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <button
-                            type="button"
-                            onClick={() => openDetailsDrawer(cert)}
-                            style={{ padding: "6px 10px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 800, color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            <Eye size={13} color="#6D28D9" /> View
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadCertificate(cert)}
-                            style={{ padding: "6px 10px", borderRadius: 8, background: "#FAF5FF", border: "1px solid #E9D5FF", fontSize: 12, fontWeight: 800, color: "#6D28D9", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            <Download size={13} /> Print/PDF
-                          </button>
-
-                          {cert.status === "issued" && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReissuingCert(cert);
-                                  setReissueReason("");
-                                }}
-                                style={{ padding: "6px 10px", borderRadius: 8, background: "#FEF3C7", border: "1px solid #FCD34D", fontSize: 12, fontWeight: 800, color: "#B45309", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
-                              >
-                                <RotateCcw size={13} /> Reissue
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRevokingCert(cert);
-                                  setRevokeReason("");
-                                }}
-                                style={{ padding: "6px 10px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", fontSize: 12, fontWeight: 800, color: "#EF4444", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
-                              >
-                                <Ban size={13} /> Revoke
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
+          /* ── TAB 2 & 3: ISSUED / ALL SYSTEM CERTIFICATES TABLE ── */
+          <div>
+            {loading ? (
+              <div style={{ padding: 60, textAlign: "center", color: "#6B7280", fontWeight: 700 }}>
+                Loading certificates from database...
+              </div>
+            ) : filteredCertificates.length === 0 ? (
+              /* ── PROFESSIONAL EMPTY STATES ── */
+              <div style={{ padding: "60px 24px", textAlign: "center", color: "#64748B" }}>
+                <Award size={48} color="#94A3B8" style={{ margin: "0 auto 14px", opacity: 0.5 }} />
+                <h3 style={{ fontSize: 20, fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
+                  {certificates.length === 0 ? "No certificates issued yet." : "No certificates found for the selected filters."}
+                </h3>
+                <p style={{ fontSize: 14, color: "#64748B", maxWidth: 440, margin: "0 auto 20px" }}>
+                  {certificates.length === 0
+                    ? "Select eligible participants from competition results and generate official certificates."
+                    : "Try resetting your search or dropdown filter parameters to view matching certificate records."}
+                </p>
+                {certificates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setEventFilter("all");
+                      setCompetitionFilter("all");
+                      setTypeFilter("all");
+                      setResultFilter("all");
+                      setStatusFilter("all");
+                      setIssueDateFilter("");
+                    }}
+                    style={{ padding: "10px 20px", borderRadius: 12, background: "#6D28D9", color: "#fff", border: "none", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+                  >
+                    Reset All Filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0" }}>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Certificate ID</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Participant</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Event</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Competition</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Result</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Certificate Type</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Issued Date</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Status</th>
+                      <th style={{ padding: "14px 18px", fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase", textAlign: "right" }}>Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filteredCertificates.map((cert) => {
+                      const resultMeta = formatResultLabel(cert.result_type);
+                      const issueDateStr = cert.issued_at
+                        ? new Date(cert.issued_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                        : "Draft";
+
+                      return (
+                        <tr
+                          key={cert.id}
+                          style={{
+                            borderBottom: "1px solid #F1F5F9",
+                            transition: "background 0.15s ease",
+                          }}
+                          className="hover:bg-slate-50"
+                        >
+                          <td style={{ padding: "16px 18px", fontWeight: 800, color: "#6D28D9", fontFamily: "monospace" }}>
+                            <button
+                              type="button"
+                              onClick={() => openDetailsDrawer(cert)}
+                              style={{ background: "none", border: "none", padding: 0, color: "#6D28D9", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
+                            >
+                              {cert.certificate_number}
+                            </button>
+                          </td>
+
+                          <td style={{ padding: "16px 18px" }}>
+                            <div style={{ fontWeight: 800, color: "#0F172A" }}>{cert.participant_name}</div>
+                            <div style={{ fontSize: 12, color: "#64748B" }}>{cert.participant_number}</div>
+                          </td>
+
+                          <td style={{ padding: "16px 18px", fontWeight: 700, color: "#334155" }}>
+                            {cert.event_title}
+                          </td>
+
+                          <td style={{ padding: "16px 18px", color: "#475569", fontWeight: 600 }}>
+                            {cert.category_name || cert.competition_name}
+                          </td>
+
+                          <td style={{ padding: "16px 18px" }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 800, color: resultMeta.color, background: resultMeta.bg, padding: "4px 10px", borderRadius: 8 }}>
+                              {resultMeta.badge}
+                            </span>
+                          </td>
+
+                          <td style={{ padding: "16px 18px", fontWeight: 700, color: "#0F172A" }}>
+                            {formatCertificateTypeLabel(cert.certificate_type)}
+                          </td>
+
+                          <td style={{ padding: "16px 18px", color: "#64748B", fontWeight: 600 }}>
+                            {issueDateStr}
+                          </td>
+
+                          <td style={{ padding: "16px 18px" }}>
+                            <span
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 900,
+                                textTransform: "uppercase",
+                                padding: "4px 10px",
+                                borderRadius: 8,
+                                background:
+                                  cert.status === "issued"
+                                    ? "#ECFDF5"
+                                    : cert.status === "revoked"
+                                    ? "#FEF2F2"
+                                    : cert.status === "pending"
+                                    ? "#EFF6FF"
+                                    : "#F8FAFC",
+                                color:
+                                  cert.status === "issued"
+                                    ? "#047857"
+                                    : cert.status === "revoked"
+                                    ? "#EF4444"
+                                    : cert.status === "pending"
+                                    ? "#1D4ED8"
+                                    : "#64748B",
+                              }}
+                            >
+                              {cert.status}
+                            </span>
+                          </td>
+
+                          {/* Row Actions */}
+                          <td style={{ padding: "16px 18px", textAlign: "right" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                onClick={() => openDetailsDrawer(cert)}
+                                style={{ padding: "6px 10px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 800, color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                <Eye size={13} color="#6D28D9" /> View
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadCertificate(cert)}
+                                style={{ padding: "6px 10px", borderRadius: 8, background: "#FAF5FF", border: "1px solid #E9D5FF", fontSize: 12, fontWeight: 800, color: "#6D28D9", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                <Download size={13} /> Print/PDF
+                              </button>
+
+                              {cert.status === "issued" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReissuingCert(cert);
+                                      setReissueReason("");
+                                    }}
+                                    style={{ padding: "6px 10px", borderRadius: 8, background: "#FEF3C7", border: "1px solid #FCD34D", fontSize: 12, fontWeight: 800, color: "#B45309", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                                  >
+                                    <RotateCcw size={13} /> Reissue
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRevokingCert(cert);
+                                      setRevokeReason("");
+                                    }}
+                                    style={{ padding: "6px 10px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", fontSize: 12, fontWeight: 800, color: "#EF4444", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                                  >
+                                    <Ban size={13} /> Revoke
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

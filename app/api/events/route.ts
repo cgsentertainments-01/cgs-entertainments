@@ -10,6 +10,7 @@ import {
 import { transformDbEvent } from "@/services/event.service";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { createAdminNotification } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -506,6 +507,16 @@ export async function POST(request: Request) {
     insertInStore(newEvent);
     revalidateEventCaches(newEvent.id, newEvent.slug);
 
+    await createAdminNotification({
+      title: "New Event Created",
+      message: `Event "${newEvent.title}" has been created successfully.`,
+      type: "event",
+      entityType: "event",
+      entityId: newEvent.id,
+      linkUrl: `/admin/events/${newEvent.id}`,
+      deduplicateKey: `event_create_${newEvent.id}`,
+    });
+
     return NextResponse.json({ success: true, event: transformDbEvent(newEvent) }, { status: 201 });
   } catch (err: any) {
     console.error("POST /api/events error:", err);
@@ -606,6 +617,16 @@ export async function DELETE(request: Request) {
     deleteFromStore(eventUUID);
     deleteFromStore(id);
     revalidateEventCaches(eventUUID, id);
+
+    await createAdminNotification({
+      title: "Event Deleted",
+      message: `Event "${deletedRows[0]?.title || eventRow?.title || id}" was deleted permanently.`,
+      type: "event",
+      entityType: "event",
+      entityId: eventUUID,
+      linkUrl: "/admin/events",
+      deduplicateKey: `event_delete_${eventUUID}`,
+    });
 
     return NextResponse.json({ success: true, deletedEvent: deletedRows[0], permanent: true });
   } catch (err: any) {

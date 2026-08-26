@@ -86,8 +86,10 @@ export async function POST(
     const {
       participant_id,
       registration_id,
-      result_type, // 'winner' | 'runner_up' | 'finalist' | 'special_mention' | 'participant' | 'pending'
+      category_id,
+      result_type, // 'winner' | 'runner_up' | 'finalist' | 'special_mention' | 'qualified' | 'eliminated' | 'participant' | 'pending'
       position,
+      score,
       notes,
       notify = false,
       send_email = false,
@@ -166,8 +168,11 @@ export async function POST(
         case "special_mention":
           rankPos = 4;
           break;
-        case "participant":
+        case "qualified":
           rankPos = 5;
+          break;
+        case "participant":
+          rankPos = 10;
           break;
         default:
           rankPos = 99;
@@ -179,8 +184,10 @@ export async function POST(
       event_id: eventId,
       participant_id,
       registration_id: registration_id || null,
+      category_id: category_id || null,
       result_type,
       position: rankPos,
+      score: score !== undefined && score !== null && score !== "" ? Number(score) : null,
       selected_by: authCheck.admin?.id || null,
       selected_at: new Date().toISOString(),
       notify_sent: Boolean(notify),

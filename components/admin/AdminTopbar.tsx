@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { AdminNotificationBell } from "@/components/admin/AdminNotificationBell";
 import {
   Menu,
   Search,
@@ -127,45 +128,8 @@ export function AdminTopbar({ onToggleMobileSidebar }: AdminTopbarProps) {
           <ChevronDown size={14} color="#94A3B8" />
         </div>
 
-        {/* Notification Bell */}
-        <div
-          style={{
-            position: "relative",
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            background: "#F8FAFC",
-            border: "1.5px solid #E2E8F0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "#475569",
-          }}
-          className="admin-top-btn"
-        >
-          <Bell size={18} />
-          <span
-            style={{
-              position: "absolute",
-              top: -3,
-              right: -3,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: "#EF4444",
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: 900,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "2px solid #fff",
-            }}
-          >
-            8
-          </span>
-        </div>
+        {/* Dynamic Admin Notification Bell */}
+        <AdminNotificationBell />
 
         {/* Admin Profile Dropdown */}
         <div style={{ position: "relative" }} ref={dropdownRef}>

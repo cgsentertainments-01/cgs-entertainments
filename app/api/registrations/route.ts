@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getStoreEvents } from "@/lib/events-store";
 import { transformDbEvent, normalizeEventIdentifier, isValidUUID } from "@/services/event.service";
 import { getDefaultFormConfig } from "@/types/event-config";
+import { createAdminNotification } from "@/lib/notifications";
 
 function normalizeGender(g?: string | null): string | null {
   if (!g || typeof g !== "string") return null;
@@ -562,6 +563,23 @@ export async function POST(request: Request) {
       };
     }
 
+    // Trigger Admin System Notification
+    await createAdminNotification({
+      title: "New Participant Registration",
+      message: `${participantData.fullName} registered for "${event.title}" (${resolvedParticipationType})`,
+      type: "registration",
+      entityType: "registration",
+      entityId: registrationRecord.id,
+      linkUrl: `/admin/participants?id=${registrationRecord.participant_id}`,
+      deduplicateKey: `reg_create_${registrationRecord.id}`,
+      metadata: {
+        registration_number: registrationRecord.registration_number,
+        participant_name: participantData.fullName,
+        event_title: event.title,
+        amount: totalAmount,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       pending: targetRegStatus === "payment_pending",
@@ -577,6 +595,13 @@ export async function POST(request: Request) {
     });
   } catch (err: any) {
     console.error("[REGISTRATION] API POST EXCEPTION:", err);
+    await createAdminNotification({
+      title: "Registration Error",
+      message: `Participant registration error: ${err.message || "Unknown error"}`,
+      type: "system",
+      linkUrl: "/admin/dashboard",
+      deduplicateKey: `err_reg_${Date.now()}`,
+    });
     return NextResponse.json(
       { success: false, error: err.message || "An unexpected error occurred during registration." },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { verifyAdminApi } from "@/lib/supabase/server";
+import { createAdminNotification } from "@/lib/notifications";
 import {
   checkCertificateEligibility,
   generateCertificateNumber,
@@ -236,6 +237,8 @@ export async function GET(request: Request) {
         competition_name: category?.name || "General",
         participation_type: (reg as any).participation_type || parsedNotes.participationType || parsedNotes.participation_type || parsedNotes.compType || "Solo",
         result_type: resultType,
+        position: assignedResult.position !== undefined && assignedResult.position !== null ? Number(assignedResult.position) : null,
+        score: assignedResult.score !== undefined && assignedResult.score !== null ? Number(assignedResult.score) : null,
         is_eligible: eligibility.eligible,
         already_has_cert: alreadyHasIssuedCert,
         certificate_type: eligibility.certificateType,
@@ -573,6 +576,22 @@ export async function POST(request: Request) {
           },
         ]);
       } catch {}
+
+      // Admin System Notification
+      await createAdminNotification({
+        title: "Certificate Issued",
+        message: `Certificate (${certNumber}) issued for ${snapshot.participant_name} in ${eventData.title}`,
+        type: "certificate",
+        entityType: "certificate",
+        entityId: insertedCert.id,
+        linkUrl: "/admin/certificates",
+        deduplicateKey: `cert_issued_${insertedCert.id}`,
+        metadata: {
+          certificate_number: certNumber,
+          participant_name: snapshot.participant_name,
+          event_title: eventData.title,
+        },
+      });
     }
 
     return NextResponse.json({

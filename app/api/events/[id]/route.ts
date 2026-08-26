@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { upsertInStore, deleteFromStore, revalidateEventCaches, DBEvent } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
+import { createAdminNotification } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -379,6 +380,16 @@ function normalizeStatus(value: unknown): string {
     const transformedObj = transformDbEvent({ ...updatedRow, category_name: category });
     upsertInStore(transformedObj as any);
     revalidateEventCaches(updatedRow.id, updatedRow.slug);
+
+    await createAdminNotification({
+      title: "Event Updated",
+      message: `Event "${updatedRow.title}" has been updated.`,
+      type: "event",
+      entityType: "event",
+      entityId: updatedRow.id,
+      linkUrl: `/admin/events/${updatedRow.id}`,
+      deduplicateKey: `event_update_${updatedRow.id}_${new Date().toISOString().substring(0, 16)}`,
+    });
 
     return NextResponse.json({
       success: true,

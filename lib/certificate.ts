@@ -72,6 +72,7 @@ export function checkCertificateEligibility(
 
   switch (normalized) {
     case "winner":
+    case "first_place":
       return {
         eligible: true,
         certificateType: "winner",
@@ -79,11 +80,13 @@ export function checkCertificateEligibility(
       };
     case "runner_up":
     case "runner-up":
+    case "second_place":
       return {
         eligible: true,
         certificateType: "runner_up",
         title: "Runner-up Certificate",
       };
+    case "third_place":
     case "finalist":
       return {
         eligible: true,
@@ -124,6 +127,13 @@ export function checkCertificateEligibility(
         title: "Ineligible",
         reason: "Participation certificates are disabled for this event",
       };
+    case "disqualified":
+      return {
+        eligible: false,
+        certificateType: null,
+        title: "Disqualified",
+        reason: "Participant is disqualified.",
+      };
     case "pending":
     default:
       return {
@@ -142,20 +152,28 @@ export function formatResultLabel(resultType?: string | null): { label: string; 
   const norm = (resultType || "pending").toLowerCase().trim();
   switch (norm) {
     case "winner":
-      return { label: "Winner", badge: "🏆 Winner", color: "#D97706", bg: "#FEF3C7" };
+      return { label: "Winner", badge: "🏆 Winner", color: "#B45309", bg: "#FEF3C7" };
+    case "first_place":
+      return { label: "1st Place", badge: "🥇 1st Place", color: "#854D0E", bg: "#FEF9C3" };
+    case "second_place":
+      return { label: "2nd Place", badge: "🥈 2nd Place", color: "#334155", bg: "#F1F5F9" };
+    case "third_place":
+      return { label: "3rd Place", badge: "🥉 3rd Place", color: "#C2410C", bg: "#FFEDD5" };
     case "runner_up":
     case "runner-up":
-      return { label: "Runner-up", badge: "🥈 Runner-up", color: "#475569", bg: "#F1F5F9" };
+      return { label: "Runner-up", badge: "🥈 Runner-up", color: "#1E293B", bg: "#E2E8F0" };
     case "finalist":
-      return { label: "Finalist", badge: "🥉 Finalist", color: "#EA580C", bg: "#FFEDD5" };
+      return { label: "Finalist", badge: "🥉 Finalist", color: "#9A3412", bg: "#FFEDD5" };
     case "special_mention":
     case "appreciation":
-      return { label: "Special Mention", badge: "⭐ Special Mention", color: "#6D28D9", bg: "#F3E8FF" };
-    case "achievement":
-      return { label: "Achievement", badge: "🌟 Achievement", color: "#0D9488", bg: "#CCFBF1" };
+      return { label: "Special Mention", badge: "⭐ Special Mention", color: "#6B21A8", bg: "#F3E8FF" };
+    case "qualified":
+      return { label: "Qualified", badge: "✓ Qualified", color: "#15803D", bg: "#DCFCE7" };
     case "participant":
     case "completed":
-      return { label: "Participant", badge: "🎓 Participant", color: "#2563EB", bg: "#EFF6FF" };
+      return { label: "Participant", badge: "🎓 Participated", color: "#0369A1", bg: "#E0F2FE" };
+    case "disqualified":
+      return { label: "Disqualified", badge: "✕ Disqualified", color: "#B91C1C", bg: "#FEE2E2" };
     case "pending":
     default:
       return { label: "Pending", badge: "⏳ Pending", color: "#64748B", bg: "#F8FAFC" };

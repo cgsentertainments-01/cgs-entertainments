@@ -4,6 +4,7 @@ import Razorpay from 'razorpay';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { verifyRazorpaySignature } from '@/lib/razorpay';
 import { isValidUUID } from '@/services/event.service';
+import { createAdminNotification } from '@/lib/notifications';
 
 export async function POST(req: Request) {
   try {
@@ -46,6 +47,14 @@ export async function POST(req: Request) {
 
     if (!isValidSignature) {
       console.warn('⚠️ Razorpay payment signature mismatch');
+      await createAdminNotification({
+        title: "Payment Signature Failed",
+        message: `Payment verification failed for Order ID ${razorpay_order_id} (Payment ID ${razorpay_payment_id})`,
+        type: "payment_failed",
+        entityType: "payment",
+        linkUrl: "/admin/participants",
+        deduplicateKey: `pay_fail_sig_${razorpay_order_id}`,
+      });
       return NextResponse.json(
         { success: false, verified: false, error: 'Payment signature verification failed' },
         { status: 400 }
@@ -208,6 +217,23 @@ export async function POST(req: Request) {
       } catch (cntErr: any) {
         console.warn('Notice updating event participant count:', cntErr.message);
       }
+
+      // 8. NOTIFY ADMIN OF SUCCESSFUL PAYMENT
+      await createAdminNotification({
+        title: "Payment Received",
+        message: `Payment of ₹${paidAmountToStore} verified for Registration ${updatedReg.registration_number}`,
+        type: "payment",
+        entityType: "payment",
+        entityId: regId,
+        linkUrl: `/admin/participants?id=${updatedReg.participant_id}`,
+        deduplicateKey: `pay_success_${razorpay_payment_id}`,
+        metadata: {
+          registration_number: updatedReg.registration_number,
+          amount: paidAmountToStore,
+          razorpay_payment_id,
+          razorpay_order_id,
+        },
+      });
 
       return NextResponse.json({
         success: true,
