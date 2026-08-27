@@ -8,7 +8,7 @@ import {
   revalidateEventCaches,
 } from "@/lib/events-store";
 import { transformDbEvent } from "@/services/event.service";
-import { isUpcomingEvent, isPublishedEvent } from "@/lib/event-lifecycle";
+import { isUpcomingEvent, isPublishedEvent, isCompletedEvent } from "@/lib/event-lifecycle";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createAdminNotification } from "@/lib/notifications";
@@ -203,11 +203,7 @@ function isValidUUID(uuid?: string | null): boolean {
         allEventsList = allEventsList.slice(0, limitParam);
       }
     } else if (isCompletedParam) {
-      allEventsList = allEventsList.filter((evt) => {
-        if (evt.is_published === false) return false;
-        const statusUpper = String(evt.lifecycle?.status || evt.status || "").toUpperCase();
-        return statusUpper === "COMPLETED";
-      });
+      allEventsList = allEventsList.filter((evt) => isCompletedEvent(evt));
 
       allEventsList.sort((a, b) => {
         const dA = new Date(a.rawDate || a.date || "").getTime() || 0;
@@ -215,7 +211,7 @@ function isValidUUID(uuid?: string | null): boolean {
         return dB - dA;
       });
     } else if (isPublishedParam || !isAllParam) {
-      // Default public events section & type=published: ONLY active published-lifecycle events
+      // Default public events section & type=published: ONLY active published events
       allEventsList = allEventsList.filter((evt) => isPublishedEvent(evt));
 
       allEventsList.sort((a, b) => {
@@ -262,6 +258,7 @@ function normalizeStatus(value: unknown): string {
   const val = value.trim().toLowerCase();
   const allowed = [
     "draft",
+    "upcoming",
     "published",
     "registration_open",
     "registration_closed",
@@ -270,7 +267,6 @@ function normalizeStatus(value: unknown): string {
     "cancelled",
   ];
   if (allowed.includes(val)) return val;
-  if (val === "upcoming") return "registration_open";
   if (val === "archived" || val === "inactive" || val === "closed") return "registration_closed";
   return "registration_open";
 }
@@ -506,7 +502,14 @@ export async function POST(request: Request) {
         .from("events")
         .insert([payloadToInsert]);
 
-      // If optional column is missing in DB schema cache, retry insert without optional columns
+      // If status check constraint fails or optional column is missing in DB schema cache, retry insert with fallback status/columns
+      if (sbErr && (sbErr.code === "23514" || sbErr.message?.includes("events_status_check"))) {
+        console.warn(`Notice: Check constraint events_status_check violated (${sbErr.message}). Retrying insert with status='registration_open' and event_type='${reqEventType}'.`);
+        const constraintFallbackPayload = { ...payloadToInsert, status: payloadToInsert.status === "upcoming" ? "registration_open" : "published" };
+        const retryRes = await dbClient.from("events").insert([constraintFallbackPayload]);
+        sbErr = retryRes.error;
+      }
+
       if (sbErr && (sbErr.code === "42703" || sbErr.message?.includes("column") || sbErr.message?.includes("rules_regulations") || sbErr.message?.includes("mobile_banner_image") || sbErr.message?.includes("event_type"))) {
         console.warn(`Notice: Column missing in DB table (${sbErr.message}). Retrying insert with sanitized payload.`);
         const fallbackPayload = { ...payloadToInsert };

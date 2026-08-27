@@ -18,7 +18,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { getEventLifecycleStatus, LifecycleInfo, isUpcomingEvent, isPublishedEvent, isDraftEvent } from "@/lib/event-lifecycle";
+import { getEventLifecycleStatus, LifecycleInfo, isUpcomingEvent, isPublishedEvent, isCompletedEvent, isDraftEvent } from "@/lib/event-lifecycle";
 
 interface EventItem {
   id: string;
@@ -60,7 +60,7 @@ export default function AdminEventsPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"published" | "upcoming" | "draft" | "all">("published");
+  const [activeTab, setActiveTab] = useState<"published" | "upcoming" | "completed" | "draft" | "all">("published");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState("All");
 
@@ -90,7 +90,7 @@ export default function AdminEventsPage() {
             participantsCount: e.participantsCount || e.current_participants || 0,
             maxSeats: e.maxSeats || e.max_participants || 500,
             status: e.status || "registration_open",
-            event_type: isUpcomingEvent(e, lifecycle) ? "upcoming" : (isDraftEvent(e, lifecycle) ? "draft" : "published"),
+            event_type: isUpcomingEvent(e) ? "upcoming" : (isDraftEvent(e) ? "draft" : "published"),
             is_published: e.is_published !== undefined ? Boolean(e.is_published) : true,
             img: e.img || e.banner_url || e.banner_image || "",
             competitionsCount: compCount,
@@ -128,25 +128,49 @@ export default function AdminEventsPage() {
     }
   };
 
+  const handleToggleCompleteEvent = async (id: string, currentCompleted: boolean) => {
+    const actionText = currentCompleted ? "re-open this event" : "mark this event as Completed";
+    if (!confirm(`Are you sure you want to ${actionText}?`)) return;
+    try {
+      const newStatus = currentCompleted ? "registration_open" : "completed";
+      const res = await fetch(`/api/events/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: newStatus,
+          completed: !currentCompleted,
+          is_completed: !currentCompleted,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchAdminEvents();
+      } else {
+        alert(data.error || "Unable to update completion status.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Unable to update completion status.");
+    }
+  };
+
   useEffect(() => {
     fetchAdminEvents();
   }, []);
 
   const publishedCount = events.filter((e) => isPublishedEvent(e.rawItem || e)).length;
   const upcomingCount = events.filter((e) => isUpcomingEvent(e.rawItem || e)).length;
+  const completedCount = events.filter((e) => isCompletedEvent(e.rawItem || e)).length;
   const draftCount = events.filter((e) => isDraftEvent(e.rawItem || e)).length;
   const allCount = events.length;
 
   const filteredEvents = events.filter((evt) => {
     const raw = evt.rawItem || evt;
-    const isUp = isUpcomingEvent(raw);
-    const isPub = isPublishedEvent(raw);
-    const isDr = isDraftEvent(raw);
 
     let matchesTab = true;
-    if (activeTab === "published") matchesTab = isPub;
-    else if (activeTab === "upcoming") matchesTab = isUp;
-    else if (activeTab === "draft") matchesTab = isDr;
+    if (activeTab === "published") matchesTab = isPublishedEvent(raw);
+    else if (activeTab === "upcoming") matchesTab = isUpcomingEvent(raw);
+    else if (activeTab === "completed") matchesTab = isCompletedEvent(raw);
+    else if (activeTab === "draft") matchesTab = isDraftEvent(raw);
     else if (activeTab === "all") matchesTab = true;
 
     const matchesSearch =
@@ -271,6 +295,43 @@ export default function AdminEventsPage() {
             }}
           >
             {upcomingCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setActiveTab("completed"); setActiveStatusFilter("All"); }}
+          style={{
+            padding: "12px 22px",
+            fontSize: 15,
+            fontWeight: 900,
+            color: activeTab === "completed" ? "#059669" : "#64748B",
+            borderBottom: activeTab === "completed" ? "3px solid #059669" : "3px solid transparent",
+            background: "none",
+            borderLeft: "none",
+            borderRight: "none",
+            borderTop: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: -2,
+            transition: "all 0.18s ease",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span>Completed Events</span>
+          <span
+            style={{
+              padding: "2px 10px",
+              borderRadius: 12,
+              background: activeTab === "completed" ? "#D1FAE5" : "#F1F5F9",
+              color: activeTab === "completed" ? "#059669" : "#64748B",
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {completedCount}
           </span>
         </button>
 
@@ -717,30 +778,72 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
 
-                  {/* Manage Button */}
-                  <Link
-                    href={`/admin/events/${encodeURIComponent(evt.id)}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      width: "100%",
-                      padding: "11px",
-                      borderRadius: 12,
-                      background: "#F1F5F9",
-                      color: "#0F172A",
-                      fontSize: 13.5,
-                      fontWeight: 800,
-                      textDecoration: "none",
-                      transition: "all 0.2s ease",
-                      boxSizing: "border-box",
-                    }}
-                    className="manage-evt-btn"
-                  >
-                    <span>Manage Event</span>
-                    <ChevronRight size={16} />
-                  </Link>
+                  {/* Action Buttons */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Link
+                      href={`/admin/events/${encodeURIComponent(evt.id)}`}
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        padding: "10px",
+                        borderRadius: 12,
+                        background: "#F1F5F9",
+                        color: "#0F172A",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        textDecoration: "none",
+                        transition: "all 0.2s ease",
+                      }}
+                      className="manage-evt-btn"
+                    >
+                      <span>Manage</span>
+                      <ChevronRight size={15} />
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCompleteEvent(evt.id, isCompletedEvent(evt.rawItem || evt))}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 12,
+                        background: isCompletedEvent(evt.rawItem || evt) ? "#ECFDF5" : "#F3F4F6",
+                        color: isCompletedEvent(evt.rawItem || evt) ? "#059669" : "#475569",
+                        border: `1px solid ${isCompletedEvent(evt.rawItem || evt) ? "#A7F3D0" : "#E5E7EB"}`,
+                        fontSize: 12.5,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                      title={isCompletedEvent(evt.rawItem || evt) ? "Re-open Event" : "Mark as Completed"}
+                    >
+                      <CheckCircle2 size={15} color={isCompletedEvent(evt.rawItem || evt) ? "#059669" : "#64748B"} />
+                      <span>{isCompletedEvent(evt.rawItem || evt) ? "Completed" : "Complete"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteEvent(evt.id)}
+                      style={{
+                        padding: "10px",
+                        borderRadius: 12,
+                        background: "#FEE2E2",
+                        color: "#DC2626",
+                        border: "none",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      title="Delete Event"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

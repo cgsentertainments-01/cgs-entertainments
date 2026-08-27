@@ -233,6 +233,8 @@ export async function PUT(
       homepage_settings,
       form_config,
       event_type,
+      completed,
+      is_completed,
     } = body;
 
     // 5. Check slug uniqueness if slug is changing
@@ -279,6 +281,7 @@ function normalizeStatus(value: unknown): string {
   const val = value.trim().toLowerCase();
   const allowed = [
     "draft",
+    "upcoming",
     "published",
     "registration_open",
     "registration_closed",
@@ -287,7 +290,6 @@ function normalizeStatus(value: unknown): string {
     "cancelled",
   ];
   if (allowed.includes(val)) return val;
-  if (val === "upcoming") return "registration_open";
   if (val === "archived" || val === "inactive" || val === "closed") return "registration_closed";
   return "registration_open";
 }
@@ -339,12 +341,28 @@ function normalizeStatus(value: unknown): string {
     };
 
     // 7. Build the update payload using explicit column mappings and sanitized types
+    const normSt = status !== undefined ? normalizeStatus(status) : undefined;
+    const isCompletedVal = completed !== undefined
+      ? Boolean(completed)
+      : is_completed !== undefined
+      ? Boolean(is_completed)
+      : normSt === "completed";
+
     const updatePayload: Record<string, unknown> = {
-      status: normalizeStatus(status),
       is_published: is_published !== undefined ? Boolean(is_published) : true,
       updated_at: new Date().toISOString(),
       form_config: baseFormConfig,
     };
+
+    if (normSt !== undefined) {
+      updatePayload.status = isCompletedVal ? "completed" : normSt;
+    } else if (isCompletedVal) {
+      updatePayload.status = "completed";
+    }
+
+    if (completed !== undefined || is_completed !== undefined || normSt === "completed") {
+      updatePayload.completed = isCompletedVal;
+    }
 
     if (event_type !== undefined) {
       const resolvedType = event_type === "upcoming" ? "upcoming" : "published";
@@ -394,6 +412,19 @@ function normalizeStatus(value: unknown): string {
       .eq("id", eventUUID)
       .select("*")
       .single();
+
+    if (sbErr && (sbErr.code === "23514" || sbErr.message?.includes("events_status_check"))) {
+      console.warn(`Notice: Check constraint events_status_check violated (${sbErr.message}). Retrying update with status='registration_open'.`);
+      const fallbackPayload = { ...updatePayload, status: updatePayload.status === "upcoming" ? "registration_open" : "published" };
+      const retryRes = await supabase
+        .from("events")
+        .update(fallbackPayload)
+        .eq("id", eventUUID)
+        .select("*")
+        .single();
+      updatedRow = retryRes.data;
+      sbErr = retryRes.error;
+    }
 
     if (sbErr && (sbErr.code === "42703" || sbErr.message?.includes("column") || sbErr.message?.includes("rules_regulations") || sbErr.message?.includes("mobile_banner_image") || sbErr.message?.includes("event_type"))) {
       console.warn(`Notice: Column missing in DB table during update (${sbErr.message}). Retrying update using fallback payload.`);

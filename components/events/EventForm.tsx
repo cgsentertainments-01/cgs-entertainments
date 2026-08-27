@@ -344,6 +344,8 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         event_type: "published",
         is_featured: isFeatured,
         is_published: isPublishAction,
+        completed: false,
+        is_completed: false,
       };
 
       if (isEdit && (realEventId || eventId)) {
@@ -411,6 +413,8 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         event_type: "upcoming",
         status: "upcoming",
         is_published: isPublished,
+        completed: false,
+        is_completed: false,
         registration_required: false,
         registration_fee: 0,
         price: 0,

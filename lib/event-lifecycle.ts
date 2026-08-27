@@ -86,8 +86,68 @@ export function parseDateTimeCombo(dateStr?: string | null, timeStr?: string | n
 }
 
 /**
- * Centralized function to calculate the exact, authoritative event lifecycle status
- * based on event publication flag, cancellation status, registration dates, and event start/end dates.
+ * Canonical status values for events across CGS Entertainments.
+ * Exactly one status applies to an event at any given time.
+ */
+export type CanonicalEventStatus = "draft" | "upcoming" | "published" | "completed";
+
+/**
+ * Returns the canonical single source of truth status for an event.
+ */
+export function getCanonicalStatus(event: any): CanonicalEventStatus {
+  if (!event) return "draft";
+  const rawStatus = String(event.status || "").toLowerCase();
+
+  // 1. Explicit Completed Check
+  if (rawStatus === "completed" || event.completed === true || event.is_completed === true) {
+    return "completed";
+  }
+
+  // 2. Draft / Unpublished Check
+  const isPublished = event.is_published !== undefined ? Boolean(event.is_published) : true;
+  if (!isPublished || rawStatus === "draft") {
+    return "draft";
+  }
+
+  // 3. Explicit Upcoming Check
+  if (rawStatus === "upcoming" || rawStatus === "coming_soon" || event.event_type === "upcoming") {
+    return "upcoming";
+  }
+
+  // 4. Default Published Event (Includes active registration_open, registration_closed, ongoing)
+  return "published";
+}
+
+/**
+ * Returns true if an event belongs strictly to the UPCOMING status section.
+ */
+export function isUpcomingEvent(event: any): boolean {
+  return getCanonicalStatus(event) === "upcoming";
+}
+
+/**
+ * Returns true if an event belongs strictly to the PUBLISHED status section.
+ */
+export function isPublishedEvent(event: any): boolean {
+  return getCanonicalStatus(event) === "published";
+}
+
+/**
+ * Returns true if an event belongs strictly to the COMPLETED status section.
+ */
+export function isCompletedEvent(event: any): boolean {
+  return getCanonicalStatus(event) === "completed";
+}
+
+/**
+ * Returns true if an event belongs strictly to the DRAFT status section.
+ */
+export function isDraftEvent(event: any): boolean {
+  return getCanonicalStatus(event) === "draft";
+}
+
+/**
+ * Centralized function to calculate detailed UI badge / CTA lifecycle information.
  */
 export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleInfo {
   const now = nowInput || new Date();
@@ -107,42 +167,8 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
     };
   }
 
-  // 2. Check Draft State (Unpublished or explicitly set to draft)
-  const isPublished = event.is_published !== undefined ? Boolean(event.is_published) : true;
-  if (!isPublished || rawStatus === "draft") {
-    return {
-      status: "DRAFT",
-      label: "Draft",
-      badgeBg: "#F1F5F9",
-      badgeColor: "#64748B",
-      badgeBorder: "#CBD5E1",
-      ctaText: "Draft Event",
-      ctaEnabled: false,
-      message: "Event is in draft mode and not visible publicly.",
-    };
-  }
-
-  // Parse Dates
-  const regStart = parseEventDate(event.registration_start_date);
-  const regClose = parseEventDate(event.registration_deadline);
-
-  // Parse Event Start Date & Time
-  const evtStart = parseDateTimeCombo(
-    event.event_date || event.date || event.rawDate,
-    event.event_start_time
-  );
-
-  // Parse Event End Date & Time (default to 1 day after start if missing)
-  let evtEnd = parseDateTimeCombo(
-    event.event_end_date || event.event_date || event.date || event.rawDate,
-    event.event_end_time
-  );
-  if (!evtEnd && evtStart) {
-    evtEnd = new Date(evtStart.getTime() + 24 * 60 * 60 * 1000); // +24 hours
-  }
-
-  // 3. Check Completed State
-  if (evtEnd && now > evtEnd) {
+  // 2. Check Completed State (Explicitly set by admin)
+  if (isCompletedEvent(event)) {
     return {
       status: "COMPLETED",
       label: "Completed",
@@ -155,7 +181,61 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
     };
   }
 
-  // 4. Check Live / Ongoing State
+  // 3. Check Draft State
+  if (isDraftEvent(event)) {
+    return {
+      status: "DRAFT",
+      label: "Draft",
+      badgeBg: "#F1F5F9",
+      badgeColor: "#64748B",
+      badgeBorder: "#CBD5E1",
+      ctaText: "Draft Event",
+      ctaEnabled: false,
+      message: "Event is in draft mode and not visible publicly.",
+    };
+  }
+
+  // 4. Check Upcoming State
+  if (isUpcomingEvent(event)) {
+    const regStart = parseEventDate(event.registration_start_date);
+    const dayStr = regStart
+      ? regStart.toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : (event.date || event.event_date || "Coming Soon");
+
+    return {
+      status: "COMING_SOON",
+      label: "Coming Soon",
+      badgeBg: "#F3E8FF",
+      badgeColor: "#6D28D9",
+      badgeBorder: "#DDD6FE",
+      ctaText: "Registration Opens Soon",
+      ctaEnabled: false,
+      message: regStart ? `Registration opens on ${dayStr}` : "Registration opening soon",
+    };
+  }
+
+  // Parse Dates for Published Events
+  const regStart = parseEventDate(event.registration_start_date);
+  const regClose = parseEventDate(event.registration_deadline);
+
+  const evtStart = parseDateTimeCombo(
+    event.event_date || event.date || event.rawDate,
+    event.event_start_time
+  );
+
+  let evtEnd = parseDateTimeCombo(
+    event.event_end_date || event.event_date || event.date || event.rawDate,
+    event.event_end_time
+  );
+  if (!evtEnd && evtStart) {
+    evtEnd = new Date(evtStart.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // 5. Check Live / Ongoing State
   if (evtStart && now >= evtStart && (!evtEnd || now <= evtEnd)) {
     return {
       status: "LIVE",
@@ -169,31 +249,8 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
     };
   }
 
-  // 5. Check Coming Soon / Upcoming State (Published, but registration opening date is in the future or explicitly set as upcoming before registration opens)
-  const isExplicitUpcoming = (event.event_type === "upcoming" || rawStatus === "upcoming" || rawStatus === "coming_soon");
-  if ((regStart && now < regStart) || (isExplicitUpcoming && (!regStart || now < regStart))) {
-    const dayStr = regStart
-      ? regStart.toLocaleDateString("en-IN", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })
-      : (event.date || event.event_date || "Coming Soon");
-    return {
-      status: "COMING_SOON",
-      label: "Coming Soon",
-      badgeBg: "#F3E8FF",
-      badgeColor: "#6D28D9",
-      badgeBorder: "#DDD6FE",
-      ctaText: "Registration Opens Soon",
-      ctaEnabled: false,
-      message: regStart ? `Registration opens on ${dayStr}` : "Registration opening soon",
-    };
-  }
-
   // 6. Check Registration Closed & Event Starting Soon
   if (regClose && now > regClose) {
-    // If event start is within 3 days (72h)
     const msUntilStart = evtStart ? evtStart.getTime() - now.getTime() : Infinity;
     const isStartingSoon = msUntilStart > 0 && msUntilStart <= 3 * 24 * 60 * 60 * 1000;
 
@@ -223,7 +280,7 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
     };
   }
 
-  // 7. Check Registration Closing Soon (Active registration, closing within 3 days / 72 hours)
+  // 7. Check Registration Closing Soon
   if (regClose && now <= regClose) {
     const msUntilClose = regClose.getTime() - now.getTime();
     const isClosingSoon = msUntilClose > 0 && msUntilClose <= 3 * 24 * 60 * 60 * 1000;
@@ -243,7 +300,7 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
     }
   }
 
-  // 8. Registration Open (Default if published and within registration dates)
+  // 8. Registration Open (Default Published state)
   return {
     status: "REGISTRATION_OPEN",
     label: "Registration Open",
@@ -256,40 +313,4 @@ export function getEventLifecycleStatus(event: any, nowInput?: Date): LifecycleI
   };
 }
 
-/**
- * Returns true if an event belongs to the UPCOMING lifecycle stage (COMING_SOON).
- * Events with registration in the future MUST appear under Upcoming Events, NOT Published Events.
- */
-export function isUpcomingEvent(event: any, nowInput?: Date): boolean {
-  if (!event) return false;
-  const lc = event.lifecycle || getEventLifecycleStatus(event, nowInput);
-  return lc.status === "COMING_SOON";
-}
-
-/**
- * Returns true if an event belongs to the PUBLISHED lifecycle stage
- * (REGISTRATION_OPEN, REGISTRATION_CLOSING_SOON, REGISTRATION_CLOSED, EVENT_STARTING_SOON, LIVE, COMPLETED).
- * Events in DRAFT or COMING_SOON MUST NOT appear as Published Events.
- */
-export function isPublishedEvent(event: any, nowInput?: Date): boolean {
-  if (!event) return false;
-  const lc = event.lifecycle || getEventLifecycleStatus(event, nowInput);
-  return (
-    lc.status === "REGISTRATION_OPEN" ||
-    lc.status === "REGISTRATION_CLOSING_SOON" ||
-    lc.status === "REGISTRATION_CLOSED" ||
-    lc.status === "EVENT_STARTING_SOON" ||
-    lc.status === "LIVE" ||
-    lc.status === "COMPLETED"
-  );
-}
-
-/**
- * Returns true if an event is in DRAFT state (unpublished or explicit draft).
- */
-export function isDraftEvent(event: any, nowInput?: Date): boolean {
-  if (!event) return false;
-  const lc = event.lifecycle || getEventLifecycleStatus(event, nowInput);
-  return lc.status === "DRAFT";
-}
 

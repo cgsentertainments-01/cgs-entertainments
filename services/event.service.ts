@@ -69,6 +69,8 @@ export interface EventItem {
   lifecycle?: LifecycleInfo;
   is_featured?: boolean;
   is_published: boolean;
+  completed?: boolean;
+  is_completed?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -243,6 +245,8 @@ export function transformDbEvent(evt: any): EventItem {
     lifecycle,
     is_featured: Boolean(evt.is_featured),
     is_published: evt.is_published !== undefined ? Boolean(evt.is_published) : true,
+    completed: Boolean(evt.completed || evt.is_completed || evt.status === "completed"),
+    is_completed: Boolean(evt.completed || evt.is_completed || evt.status === "completed"),
     created_at: evt.created_at,
     updated_at: evt.updated_at,
   };
