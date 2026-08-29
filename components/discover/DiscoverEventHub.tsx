@@ -37,88 +37,6 @@ export type EventHubItem = {
   is_featured?: boolean;
 };
 
-const MOCK_FEATURED_EVENT: EventHubItem = {
-  id: "featured-1",
-  title: "CGS Dance Fest 2026",
-  slug: "cgs-dance-fest-2026",
-  badge: "DANCE",
-  badgeBg: "#6D28D9",
-  date: "15 Oct 2026",
-  rawDate: "2026-10-15",
-  location: "Shilpakalam Vedika, Hyderabad",
-  venue: "Shilpakalam Vedika",
-  city: "Hyderabad",
-  img: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1200&q=85",
-  short_description: "Annual National Dance Championship bringing together top solo, duo & group talent across India.",
-  description: "Join India's grandest dance extravaganza. Compete in Classical, Hip Hop, Western & Folk categories with live celebrity judges and cash rewards.",
-  registrationFee: 499,
-  is_featured: true,
-};
-
-const MOCK_UPCOMING_EVENTS: EventHubItem[] = [
-
-  {
-    id: "upcoming-2",
-    title: "CGS Voice Star Idol 2026",
-    slug: "cgs-voice-star-idol-2026",
-    badge: "SINGING",
-    badgeBg: "#DB2777",
-    date: "22 Oct 2026",
-    rawDate: "2026-10-22",
-    location: "Ravindra Bharathi, Hyderabad",
-    venue: "Ravindra Bharathi",
-    city: "Hyderabad",
-    img: "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=800&q=85",
-    short_description: "Solo & chorus vocal competition with studio contracts.",
-    registrationFee: 399,
-  },
-  {
-    id: "upcoming-3",
-    title: "Short Film & Acting Fest",
-    slug: "short-film-acting-fest",
-    badge: "ACTING",
-    badgeBg: "#D97706",
-    date: "28 Oct 2026",
-    rawDate: "2026-10-28",
-    location: "Prasad IMax, Hyderabad",
-    venue: "Prasad IMax",
-    city: "Hyderabad",
-    img: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=800&q=85",
-    short_description: "Theatrical plays and short film premiere showcase.",
-    registrationFee: 299,
-  },
-  {
-    id: "upcoming-4",
-    title: "National Band & Instrumental Jam",
-    slug: "national-band-instrumental-jam",
-    badge: "MUSIC",
-    badgeBg: "#059669",
-    date: "05 Nov 2026",
-    rawDate: "2026-11-05",
-    location: "Gachibowli Stadium, Hyderabad",
-    venue: "Gachibowli Stadium",
-    city: "Hyderabad",
-    img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=85",
-    short_description: "Battle of the bands and acoustic instrumental solos.",
-    registrationFee: 599,
-  },
-  {
-    id: "upcoming-5",
-    title: "Creative Lens Photography 2026",
-    slug: "creative-lens-photography-2026",
-    badge: "DESIGN",
-    badgeBg: "#7C3AED",
-    date: "12 Nov 2026",
-    rawDate: "2026-11-12",
-    location: "State Art Gallery, Hyderabad",
-    venue: "State Art Gallery",
-    city: "Hyderabad",
-    img: "https://images.unsplash.com/photo-1452587925148-ce544e77e70d?auto=format&fit=crop&w=800&q=85",
-    short_description: "Visual design, portraiture & digital art showcase.",
-    registrationFee: 199,
-  },
-];
-
 export function DiscoverEventHub() {
   const [events, setEvents] = useState<EventHubItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,7 +118,7 @@ export function DiscoverEventHub() {
         const res = await fetch("/api/events?all=true", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          if (isMounted && data.events && data.events.length > 0) {
+          if (isMounted && data.events) {
             setEvents(data.events);
             return;
           }
@@ -219,15 +137,11 @@ export function DiscoverEventHub() {
 
   // Published Events vs Upcoming Events
   const publishedEvents = useMemo(() => {
-    const list = events.filter((e: any) => isPublishedEvent(e));
-    if (list.length > 0) return list;
-    return [MOCK_FEATURED_EVENT];
+    return events.filter((e: any) => isPublishedEvent(e));
   }, [events]);
 
   const upcomingEventsRaw = useMemo(() => {
-    const list = events.filter((e: any) => isUpcomingEvent(e));
-    if (list.length > 0) return list;
-    return MOCK_UPCOMING_EVENTS;
+    return events.filter((e: any) => isUpcomingEvent(e));
   }, [events]);
 
   // Combined list for search & category filtering
@@ -289,8 +203,7 @@ export function DiscoverEventHub() {
 
   // Separate Featured vs Main List
   const featuredEvent = useMemo(() => {
-    const explicitlyFeatured = filteredEvents.find((e) => e.is_featured);
-    return explicitlyFeatured || filteredEvents[0] || MOCK_FEATURED_EVENT;
+    return filteredEvents.find((e) => e.is_featured) || filteredEvents[0] || null;
   }, [filteredEvents]);
 
   const upcomingList = useMemo(() => {
@@ -569,20 +482,32 @@ export function DiscoverEventHub() {
                 overflow: "hidden",
               }}
             >
-              <Image
-                src={
-                  featuredEvent.img ||
-                  "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1200&q=85"
-                }
-                alt={featuredEvent.title}
-                fill
-                sizes="(max-width: 768px) 100vw, 80vw"
-                style={{
-                  objectFit: "cover",
-                  objectPosition: "center",
-                }}
-                priority
-              />
+              {featuredEvent.img ? (
+                <Image
+                  src={featuredEvent.img}
+                  alt={featuredEvent.title}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 80vw"
+                  style={{
+                    objectFit: "cover",
+                    objectPosition: "center",
+                  }}
+                  priority
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    background: "linear-gradient(135deg, #1E1B4B 0%, #4C1D95 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Sparkles size={40} color="#8B5CF6" />
+                </div>
+              )}
               <div
                 style={{
                   position: "absolute",
@@ -785,18 +710,33 @@ export function DiscoverEventHub() {
         </div>
 
         {/* Cards Grid - 2 columns on mobile */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 18,
-          }}
-          className="upcoming-events-grid"
-        >
-          {upcomingList.map((evt) => (
-            <EventCard key={evt.id} evt={evt} />
-          ))}
-        </div>
+        {upcomingList.length > 0 ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 18,
+            }}
+            className="upcoming-events-grid"
+          >
+            {upcomingList.map((evt) => (
+              <EventCard key={evt.id} evt={evt} />
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: 40,
+              background: "#FFFFFF",
+              borderRadius: 20,
+              border: "1.5px dashed #E5E7EB",
+              textAlign: "center",
+              color: "#6B7280",
+            }}
+          >
+            No upcoming events found.
+          </div>
+        )}
       </section>
 
       {/* ── 6. QUICK FILTER MODAL / SHEET (⚙ Triggered) ── */}

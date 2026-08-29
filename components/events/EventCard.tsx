@@ -103,21 +103,31 @@ export function EventCard({ evt }: { evt: EventType }) {
           background: "#1E1B4B",
         }}
       >
-        <Image
-          src={
-            evt.img ||
-            "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=85"
-          }
-          alt={evt.title}
-          fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          style={{
-            objectFit: "cover",
-            objectPosition: "center",
-            transform: hovered ? "scale(1.05)" : "scale(1)",
-            transition: "transform 0.4s ease",
-          }}
-        />
+        {evt.img ? (
+          <Image
+            src={evt.img}
+            alt={evt.title}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            style={{
+              objectFit: "cover",
+              objectPosition: "center",
+              transform: hovered ? "scale(1.05)" : "scale(1)",
+              transition: "transform 0.4s ease",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "linear-gradient(135deg, #1E1B4B 0%, #4C1D95 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          />
+        )}
         <div
           style={{
             position: "absolute",
