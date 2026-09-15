@@ -18,7 +18,8 @@ export function Footer() {
           }}
           className="footer-cols"
         >
-          <div>
+          {/* Brand Info Column */}
+          <div className="footer-brand-col">
             <div
               style={{
                 background: "#ffffff",
@@ -32,6 +33,7 @@ export function Footer() {
                 height: 64,
                 overflow: "visible",
               }}
+              className="footer-logo-card"
             >
               <img
                 src="/images/logos/logo.jpeg"
@@ -46,15 +48,16 @@ export function Footer() {
                   transformOrigin: "left center",
                   marginLeft: "6px",
                 }}
+                className="footer-logo-img"
               />
             </div>
 
-            <p style={{ fontSize: 13, color: "#A78BFA", lineHeight: 1.7, maxWidth: 260, margin: "0 0 16px" }}>
+            <p style={{ fontSize: 13, color: "#A78BFA", lineHeight: 1.7, maxWidth: 260, margin: "0 0 16px" }} className="footer-tagline">
               Show Your Talent. Shine On Stage. Be A Star! India&apos;s Premier Competition Platform.
             </p>
 
             {/* Social Media Links (Instagram, YouTube, WhatsApp) */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }} className="footer-social-wrap">
               {/* Instagram */}
               <a
                 href="https://www.instagram.com/cgs_entertainment_88112/"
@@ -128,8 +131,10 @@ export function Footer() {
               </a>
             </div>
           </div>
-          <div>
-            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }}>
+
+          {/* Quick Links Column */}
+          <div className="footer-col-quick">
+            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }} className="footer-heading">
               Quick Links
             </h4>
             {["Home", "Events", "Categories", "FAQs", "Contact"].map((l) => (
@@ -137,13 +142,16 @@ export function Footer() {
                 key={l}
                 href={`/${l.toLowerCase() === "home" ? "" : l.toLowerCase()}`}
                 style={{ display: "block", fontSize: 13, color: "#A78BFA", textDecoration: "none", marginBottom: 10, fontWeight: 500 }}
+                className="footer-nav-link"
               >
                 {l}
               </Link>
             ))}
           </div>
-          <div>
-            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }}>
+
+          {/* Categories Column */}
+          <div className="footer-col-cat">
+            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }} className="footer-heading">
               Categories
             </h4>
             {["Dance", "Modeling", "Acting", "Singing", "Music"].map((l) => (
@@ -151,24 +159,29 @@ export function Footer() {
                 key={l}
                 href={`/categories?slug=${l.toLowerCase()}`}
                 style={{ display: "block", fontSize: 13, color: "#A78BFA", textDecoration: "none", marginBottom: 10, fontWeight: 500 }}
+                className="footer-nav-link"
               >
                 {l}
               </Link>
             ))}
           </div>
-          <div>
-            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }}>
+
+          {/* Contact Us Column */}
+          <div className="footer-contact-col">
+            <h4 style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 16 }} className="footer-heading">
               Contact Us
             </h4>
-            <div style={{ fontSize: 13, color: "#A78BFA", lineHeight: 2.1 }}>
+            <div style={{ fontSize: 13, color: "#A78BFA", lineHeight: 2.1 }} className="footer-contact-details">
               <div>Hyderabad, Telangana, India</div>
               <div>+91 98765 43210</div>
-              <div>info@cgsentertainments.com</div>
+              <div className="footer-email-link">info@cgsentertainments.com</div>
             </div>
           </div>
         </div>
-        <div style={{ paddingTop: 28, textAlign: "center" }}>
-          <div style={{ fontSize: 18, color: "#FFFFFF", marginBottom: 8, fontWeight: 600 }}>
+
+        {/* Bottom Credits & Copyright */}
+        <div style={{ paddingTop: 28, textAlign: "center" }} className="footer-bottom-wrap">
+          <div style={{ fontSize: 18, color: "#FFFFFF", marginBottom: 8, fontWeight: 600 }} className="footer-credit">
             Designed and Developed by{" "}
             <a
               href={`https://wa.me/919392472134?text=${encodeURIComponent(
@@ -192,7 +205,7 @@ export function Footer() {
               Autofy.ai
             </a>
           </div>
-          <div style={{ fontSize: 14.5, color: "#C4B5FD", fontWeight: 600 }}>
+          <div style={{ fontSize: 14.5, color: "#C4B5FD", fontWeight: 600 }} className="footer-copyright">
             © {new Date().getFullYear()} CGS Entertainments. All rights reserved.
           </div>
         </div>
@@ -225,11 +238,105 @@ export function Footer() {
           text-decoration-color: #C084FC !important;
           transform: translateY(-2px) scale(1.05);
         }
-        @media (max-width: 800px) { .footer-cols { grid-template-columns: 1fr 1fr !important; } }
-        @media (max-width: 767px) {
-          .cgs-footer { padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px)) !important; }
+
+        /* ── Tablet & Small Desktop (769px - 1024px) ── */
+        @media (max-width: 1024px) and (min-width: 769px) {
+          .footer-cols {
+            grid-template-columns: 1.5fr 1fr 1fr 1.2fr !important;
+            gap: 28px !important;
+          }
         }
-        @media (max-width: 480px) { .footer-cols { grid-template-columns: 1fr !important; } }
+
+        /* ── Mobile & Tablet (< 768px) ── */
+        @media (max-width: 768px) {
+          .cgs-footer {
+            padding: 36px 0 calc(84px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+          .cgs-footer .cgs-main-container {
+            padding-left: 16px !important;
+            padding-right: 16px !important;
+            box-sizing: border-box !important;
+          }
+          .footer-cols {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 32px 20px !important;
+            padding-bottom: 28px !important;
+          }
+          .footer-brand-col {
+            grid-column: 1 / -1 !important;
+          }
+          .footer-contact-col {
+            grid-column: 1 / -1 !important;
+          }
+          .footer-tagline {
+            max-width: 100% !important;
+          }
+          .footer-contact-details {
+            line-height: 1.9 !important;
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+          }
+          .footer-email-link {
+            word-break: break-all !important;
+            overflow-wrap: break-word !important;
+          }
+          .footer-bottom-wrap {
+            padding-top: 22px !important;
+          }
+          .footer-credit {
+            font-size: clamp(14px, 3.8vw, 16px) !important;
+            margin-bottom: 6px !important;
+            line-height: 1.4 !important;
+          }
+          .autofy-link {
+            font-size: clamp(15px, 4.2vw, 18px) !important;
+          }
+          .footer-copyright {
+            font-size: 12.5px !important;
+            line-height: 1.5 !important;
+          }
+        }
+
+        /* ── Mobile Phone Viewport Enhancements (<= 480px) ── */
+        @media (max-width: 480px) {
+          .footer-logo-card {
+            width: 220px !important;
+            height: 56px !important;
+            padding: 6px 14px !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+          .footer-logo-img {
+            height: 48px !important;
+            transform: scale(1.6) !important;
+          }
+          .footer-heading {
+            margin-bottom: 12px !important;
+          }
+          .footer-nav-link {
+            margin-bottom: 8px !important;
+          }
+        }
+
+        /* ── Very Narrow Mobile Viewports (<= 360px: e.g. 320px - 360px) ── */
+        @media (max-width: 360px) {
+          .cgs-footer .cgs-main-container {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+          }
+          .footer-cols {
+            gap: 26px 14px !important;
+          }
+          .footer-logo-card {
+            width: 200px !important;
+            height: 52px !important;
+            padding: 6px 12px !important;
+          }
+          .footer-logo-img {
+            height: 42px !important;
+            transform: scale(1.5) !important;
+          }
+        }
       `}</style>
     </footer>
   );

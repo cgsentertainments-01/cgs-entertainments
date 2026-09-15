@@ -908,6 +908,16 @@ export default function FaqsPage() {
           .faq-newsletter-bar { flex-direction: column !important; align-items: flex-start !important; }
           .faq-news-form { width: 100% !important; }
         }
+
+        @media (max-width: 640px) {
+          .faq-newsletter-bar { padding: 24px 18px !important; border-radius: 20px !important; }
+          .faq-news-form { flex-direction: column !important; gap: 12px !important; }
+          .faq-news-form button { width: 100% !important; justify-content: center !important; }
+        }
+
+        @media (max-width: 360px) {
+          .faq-newsletter-bar { padding: 20px 14px !important; }
+        }
       `}</style>
       <Footer />
     </div>

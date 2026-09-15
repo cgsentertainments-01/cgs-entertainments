@@ -68,6 +68,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   const [description, setDescription] = useState("");
   const [categoryName, setCategoryName] = useState("Dance");
   const [status, setStatus] = useState<string>("registration_open");
+  const [completed, setCompleted] = useState<boolean>(false);
   const [isFeatured, setIsFeatured] = useState(false);
   const [isPublished, setIsPublished] = useState(true);
 
@@ -102,7 +103,7 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
   });
 
   // Step 5: Multi-Round Setup
-  const [roundsList, setRoundsList] = useState<Array<{ name: string; status: string; fee: number }>>([
+  const [roundsList, setRoundsList] = useState<Array<{ id?: string; name: string; status: string; fee: number }>>([
     { name: "Round 1 / Auditions", status: "active", fee: 0 },
     { name: "Semi Final", status: "upcoming", fee: 0 },
     { name: "Final", status: "upcoming", fee: 0 },
@@ -123,7 +124,9 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     setShortDescription(evt.short_description || "");
     setDescription(evt.description || "");
     setCategoryName(evt.category || "Dance");
-    setStatus(evt.status || "registration_open");
+    const isComp = Boolean(evt.completed || evt.is_completed || evt.status === "completed");
+    setCompleted(isComp);
+    setStatus(evt.status || (isComp ? "completed" : "registration_open"));
     setIsFeatured(Boolean(evt.is_featured));
     setIsPublished(evt.is_published !== undefined ? Boolean(evt.is_published) : true);
 
@@ -195,11 +198,36 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
     async function initForm() {
       if (isEdit) {
         setLoading(true);
+        let targetId = "";
         if (initialData) {
           populateData(initialData);
+          targetId = initialData.id || "";
         } else if (eventId) {
           const evt = await getEventByIdOrSlug(eventId);
-          if (evt) populateData(evt);
+          if (evt) {
+            populateData(evt);
+            targetId = evt.id || "";
+          }
+        }
+        if (targetId) {
+          try {
+            const rRes = await fetch(`/api/events/${encodeURIComponent(targetId)}/rounds`, { cache: "no-store" });
+            if (rRes.ok) {
+              const rData = await rRes.json();
+              if (Array.isArray(rData.rounds) && rData.rounds.length > 0) {
+                setRoundsList(
+                  rData.rounds.map((r: any, idx: number) => ({
+                    id: r.id,
+                    name: r.name || `Round ${idx + 1}`,
+                    status: r.status || "upcoming",
+                    fee: typeof r.fee === "number" ? r.fee : parseFloat(r.fee) || 0,
+                  }))
+                );
+              }
+            }
+          } catch (rErr) {
+            console.warn("Could not load competition rounds:", rErr);
+          }
         }
         setLoading(false);
       }
@@ -340,12 +368,14 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         registration_fee: primaryFee,
         price: primaryFee,
         form_config: mergedFormConfig,
-        status: isPublishAction ? "registration_open" : "draft",
+        status: isEdit
+          ? (isPublishAction ? (status === "draft" ? "registration_open" : status) : "draft")
+          : (isPublishAction ? "registration_open" : "draft"),
         event_type: "published",
         is_featured: isFeatured,
         is_published: isPublishAction,
-        completed: false,
-        is_completed: false,
+        completed: isEdit ? completed : false,
+        is_completed: isEdit ? completed : false,
       };
 
       if (isEdit && (realEventId || eventId)) {
@@ -353,7 +383,28 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
         payload.id = targetId;
         const res = await updateEvent(targetId, payload);
         if (res.success) {
-          setSuccessMsg("Event published successfully in Supabase!");
+          // Persist rounds to competition_rounds in Supabase
+          if (roundsList && roundsList.length > 0) {
+            try {
+              await fetch(`/api/events/${encodeURIComponent(targetId)}/rounds`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  rounds: roundsList.map((r, idx) => ({
+                    ...(r.id ? { id: r.id } : {}),
+                    name: r.name,
+                    status: r.status || "upcoming",
+                    fee: typeof r.fee === "number" ? r.fee : parseFloat(r.fee) || 0,
+                    round_number: idx + 1,
+                  })),
+                }),
+              });
+            } catch (roundSaveErr) {
+              console.error("Error persisting competition rounds on edit:", roundSaveErr);
+            }
+          }
+
+          setSuccessMsg("Event updated successfully in Supabase!");
           setTimeout(() => {
             router.refresh();
             router.push("/admin/events");
@@ -365,6 +416,27 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
       } else {
         const res = await createEvent(payload);
         if (res.success) {
+          const targetId = res.event?.id;
+          // Persist rounds to competition_rounds in Supabase
+          if (roundsList && roundsList.length > 0 && targetId) {
+            try {
+              await fetch(`/api/events/${encodeURIComponent(targetId)}/rounds`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  rounds: roundsList.map((r, idx) => ({
+                    name: r.name,
+                    status: r.status || "upcoming",
+                    fee: typeof r.fee === "number" ? r.fee : parseFloat(r.fee) || 0,
+                    round_number: idx + 1,
+                  })),
+                }),
+              });
+            } catch (roundSaveErr) {
+              console.error("Error persisting competition rounds on create:", roundSaveErr);
+            }
+          }
+
           setSuccessMsg("Event published successfully in Supabase!");
           setTimeout(() => {
             router.refresh();
@@ -947,6 +1019,49 @@ export function EventForm({ mode, eventId, initialData }: EventFormProps) {
                 />
               </div>
             </div>
+
+            {isEdit && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                    Event Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => {
+                      const newStat = e.target.value;
+                      setStatus(newStat);
+                      if (newStat === "completed") setCompleted(true);
+                      else if (newStat === "registration_open" || newStat === "draft") setCompleted(false);
+                    }}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 14, outline: "none", background: "#fff" }}
+                  >
+                    <option value="registration_open">Registration Open</option>
+                    <option value="registration_closed">Registration Closed</option>
+                    <option value="completed">Completed</option>
+                    <option value="draft">Draft</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 26 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 800, color: "#334155", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={completed}
+                      onChange={(e) => {
+                        const isChk = e.target.checked;
+                        setCompleted(isChk);
+                        if (isChk) setStatus("completed");
+                        else if (status === "completed") setStatus("registration_open");
+                      }}
+                      style={{ width: 18, height: 18, accentColor: "#7C3AED", cursor: "pointer" }}
+                    />
+                    Event Completed
+                  </label>
+                </div>
+              </div>
+            )}
 
             <div>
               <label style={{ display: "block", fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 6 }}>

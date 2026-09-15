@@ -70,37 +70,23 @@ export interface DBEvent {
   updated_at?: string;
 }
 
-let serverEventsStore: DBEvent[] = [];
-
+// Supabase is the single source of truth for events.
+// Process-local store is retired to prevent split-brain state in serverless runtimes.
 export function getStoreEvents(): DBEvent[] {
-  return serverEventsStore;
+  return [];
 }
 
-// For CREATE operations: ALWAYS insert as a new item in the memory store
-export function insertInStore(event: DBEvent) {
-  // Remove any stale item matching the exact ID only
-  serverEventsStore = serverEventsStore.filter(
-    (e) => String(e.id) !== String(event.id)
-  );
-  serverEventsStore.unshift(event);
+// Deprecated no-ops retained for backwards compatibility
+export function insertInStore(_event: DBEvent) {
+  // No-op: Supabase PostgreSQL is the sole authoritative data store
 }
 
-// For EDIT operations: Update existing item by ID or slug
-export function upsertInStore(event: DBEvent) {
-  const index = serverEventsStore.findIndex(
-    (e) => String(e.id) === String(event.id) || (e.slug && event.slug && e.slug === event.slug)
-  );
-  if (index >= 0) {
-    serverEventsStore[index] = { ...serverEventsStore[index], ...event };
-  } else {
-    serverEventsStore.unshift(event);
-  }
+export function upsertInStore(_event: DBEvent) {
+  // No-op: Supabase PostgreSQL is the sole authoritative data store
 }
 
-export function deleteFromStore(id: string) {
-  serverEventsStore = serverEventsStore.filter(
-    (e) => String(e.id) !== String(id) && e.slug !== id
-  );
+export function deleteFromStore(_id: string) {
+  // No-op: Supabase PostgreSQL is the sole authoritative data store
 }
 
 export function revalidateEventCaches(id?: string, slug?: string) {

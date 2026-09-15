@@ -7,7 +7,11 @@ import {
   deleteFromStore,
   revalidateEventCaches,
 } from "@/lib/events-store";
-import { transformDbEvent } from "@/services/event.service";
+import {
+  transformDbEvent,
+  normalizeEventIdentifier as normalizeIdentifier,
+  isValidUUID,
+} from "@/services/event.service";
 import { isUpcomingEvent, isPublishedEvent, isCompletedEvent } from "@/lib/event-lifecycle";
 import { verifyAdminApi } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -86,43 +90,8 @@ export async function GET(request: Request) {
       }
     }
 
-    // Merge Supabase events with server-side store events
-    // CRITICAL: Supabase DB is single source of truth when available. Fallback to store only if DB returns empty.
-    const combinedMap = new Map<string, any>();
-
-    if (supabaseEvents && supabaseEvents.length > 0) {
-      for (const item of supabaseEvents) {
-        if (item && item.id) {
-          combinedMap.set(String(item.id), item);
-        }
-      }
-    } else {
-      for (const item of getStoreEvents()) {
-        if (item && item.id) {
-          combinedMap.set(String(item.id), item);
-        }
-      }
-    }
-
-    const uniqueRawEvents = Array.from(combinedMap.values());
-    let allEventsList = uniqueRawEvents.map(transformDbEvent);
-
-function normalizeIdentifier(val?: string | null): string {
-  if (!val) return "";
-  let clean = String(val).trim();
-  while (
-    (clean.startsWith('"') && clean.endsWith('"')) ||
-    (clean.startsWith("'") && clean.endsWith("'"))
-  ) {
-    clean = clean.substring(1, clean.length - 1).trim();
-  }
-  return clean;
-}
-
-function isValidUUID(uuid?: string | null): boolean {
-  if (!uuid || typeof uuid !== "string") return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid.trim());
-}
+    // Supabase DB is the single source of truth for events
+    let allEventsList = (supabaseEvents || []).map(transformDbEvent);
 
     // Single lookup by slug or id
     if (slugParam) {
@@ -180,7 +149,6 @@ function isValidUUID(uuid?: string | null): boolean {
         if (directEvt) {
           console.log(`[API /api/events] Event FOUND in Supabase for ${paramType} "${cleanParam}": Title="${directEvt.title}"`);
           const transformed = transformDbEvent(directEvt);
-          insertInStore(transformed as any);
           return NextResponse.json({ event: transformed });
         }
       }
@@ -542,7 +510,6 @@ export async function POST(request: Request) {
       );
     }
 
-    insertInStore(newEvent);
     revalidateEventCaches(newEvent.id, newEvent.slug);
 
     await createAdminNotification({
@@ -581,20 +548,34 @@ export async function DELETE(request: Request) {
     }
 
     // 1. Resolve exact event row by UUID or slug
-    const { data: eventRow, error: fetchErr } = await supabase
-      .from("events")
-      .select("id, title, status")
-      .or(`id.eq.${id},slug.eq.${id}`)
-      .maybeSingle();
+    const cleanId = normalizeIdentifier(id);
+    if (!cleanId) {
+      return NextResponse.json({ success: false, error: "Missing event ID" }, { status: 400 });
+    }
+
+    const isUUID = isValidUUID(cleanId);
+    let fetchQuery = supabase.from("events").select("id, title, status");
+    if (isUUID) {
+      fetchQuery = fetchQuery.eq("id", cleanId);
+    } else {
+      fetchQuery = fetchQuery.eq("slug", cleanId);
+    }
+
+    const { data: eventRow, error: fetchErr } = await fetchQuery.maybeSingle();
 
     if (fetchErr) {
       console.error("Supabase fetch event error before delete:", fetchErr);
+      return NextResponse.json(
+        { success: false, error: `Database error while locating event: ${fetchErr.message}` },
+        { status: 500 }
+      );
     }
 
     if (!eventRow) {
-      deleteFromStore(id);
-      revalidateEventCaches(id);
-      return NextResponse.json({ success: true, message: "Event not found in DB or already removed" });
+      return NextResponse.json(
+        { success: false, error: `Event not found for identifier: '${cleanId}'` },
+        { status: 404 }
+      );
     }
 
     const eventUUID = eventRow.id;

@@ -461,9 +461,8 @@ function normalizeStatus(value: unknown): string {
       );
     }
 
-    // 9. Sync in-memory store and revalidate Next.js cache
+    // 9. Revalidate Next.js cache
     const transformedObj = transformDbEvent({ ...updatedRow, category_name: category });
-    upsertInStore(transformedObj as any);
     revalidateEventCaches(updatedRow.id, updatedRow.slug);
 
     await createAdminNotification({
@@ -583,8 +582,6 @@ export async function DELETE(
         }
 
         console.log(`[DELETE SUCCESS] Deleted row from Supabase:`, deletedRows[0]);
-        deleteFromStore(resolved.uuid);
-        deleteFromStore(id);
         revalidateEventCaches(resolved.uuid, id);
 
         return NextResponse.json({ success: true, deletedEvent: deletedRows[0] });
