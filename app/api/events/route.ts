@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabase as clientSupabase } from "@/lib/supabase";
 import {
   DBEvent,
   getStoreEvents,
   insertInStore,
   deleteFromStore,
   revalidateEventCaches,
+  getCachedEvents,
+  setCachedEvents,
+  clearEventsCache,
 } from "@/lib/events-store";
 import {
   transformDbEvent,
@@ -19,14 +22,17 @@ import { createAdminNotification } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
+const supabase = clientSupabase;
+
 // Helper to find or create category ID in event_categories table
 async function getOrCreateCategoryId(categoryName: string): Promise<string | null> {
-  if (!supabase) return null;
+  const dbClient = getSupabaseAdmin() || clientSupabase;
+  if (!dbClient) return null;
   const name = categoryName || "Dance";
   const catSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "dance";
 
   try {
-    const { data: existing } = await supabase
+    const { data: existing } = await dbClient
       .from("event_categories")
       .select("id")
       .or(`slug.eq.${catSlug},name.ilike.${name}`)
@@ -36,7 +42,7 @@ async function getOrCreateCategoryId(categoryName: string): Promise<string | nul
       return existing[0].id;
     }
 
-    const { data: inserted } = await supabase
+    const { data: inserted } = await dbClient
       .from("event_categories")
       .insert([
         {
@@ -53,7 +59,7 @@ async function getOrCreateCategoryId(categoryName: string): Promise<string | nul
       return inserted[0].id;
     }
 
-    const { data: anyCat } = await supabase.from("event_categories").select("id").limit(1);
+    const { data: anyCat } = await dbClient.from("event_categories").select("id").limit(1);
     if (anyCat && anyCat.length > 0) {
       return anyCat[0].id;
     }
@@ -76,17 +82,31 @@ export async function GET(request: Request) {
   try {
     let supabaseEvents: any[] = [];
 
-    // 1. Query Supabase events table
-    if (supabase) {
-      const { data, error } = await supabase
-        .from("events")
-        .select("*, event_categories(name)");
+    // 1. Query Supabase events table with high-speed in-memory caching
+    const cached = getCachedEvents();
+    if (cached && cached.length > 0) {
+      supabaseEvents = cached;
+    } else {
+      const dbClient = getSupabaseAdmin() || clientSupabase;
+      if (dbClient) {
+        const { data, error } = await dbClient
+          .from("events")
+          .select("*, event_categories(name)")
+          .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        supabaseEvents = data;
-      } else {
-        const { data: fallbackData } = await supabase.from("events").select("*");
-        if (fallbackData) supabaseEvents = fallbackData;
+        if (!error && data) {
+          supabaseEvents = data;
+          setCachedEvents(data);
+        } else {
+          const { data: fallbackData } = await dbClient
+            .from("events")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (fallbackData) {
+            supabaseEvents = fallbackData;
+            setCachedEvents(fallbackData);
+          }
+        }
       }
     }
 
@@ -98,9 +118,6 @@ export async function GET(request: Request) {
       const cleanParam = normalizeIdentifier(slugParam);
       const isUUID = isValidUUID(cleanParam);
       const paramType = isUUID ? "UUID" : "slug";
-
-      console.log(`[API /api/events] Requested lookup parameter: "${slugParam}"`);
-      console.log(`[API /api/events] Normalized parameter: "${cleanParam}" | Type: ${paramType}`);
 
       if (!cleanParam) {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -116,18 +133,24 @@ export async function GET(request: Request) {
       });
 
       if (foundInCache) {
-        console.log(`[API /api/events] Event FOUND in cache for ${paramType} "${cleanParam}": Title="${foundInCache.title}"`);
-        return NextResponse.json({ event: foundInCache });
+        return NextResponse.json(
+          { event: foundInCache },
+          {
+            status: 200,
+            headers: {
+              "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+            },
+          }
+        );
       }
 
       // Direct query in Supabase if not found in memory store
-      if (supabase) {
-        let query = supabase.from("events").select("*, event_categories(name)");
+      const dbClient = getSupabaseAdmin() || clientSupabase;
+      if (dbClient) {
+        let query = dbClient.from("events").select("*, event_categories(name)");
         if (isUUID) {
-          console.log(`[API /api/events] Querying Supabase: events.select(*).eq('id', '${cleanParam}')`);
           query = query.eq("id", cleanParam);
         } else {
-          console.log(`[API /api/events] Querying Supabase: events.select(*).eq('slug', '${cleanParam}')`);
           query = query.eq("slug", cleanParam);
         }
 
@@ -135,8 +158,7 @@ export async function GET(request: Request) {
 
         // Fallback query if category join fails
         if (directErr) {
-          console.warn(`[API /api/events] Primary query returned notice: ${directErr.message}. Trying fallback query without category join.`);
-          let fallbackQuery = supabase.from("events").select("*");
+          let fallbackQuery = dbClient.from("events").select("*");
           if (isUUID) {
             fallbackQuery = fallbackQuery.eq("id", cleanParam);
           } else {
@@ -147,13 +169,19 @@ export async function GET(request: Request) {
         }
 
         if (directEvt) {
-          console.log(`[API /api/events] Event FOUND in Supabase for ${paramType} "${cleanParam}": Title="${directEvt.title}"`);
           const transformed = transformDbEvent(directEvt);
-          return NextResponse.json({ event: transformed });
+          return NextResponse.json(
+            { event: transformed },
+            {
+              status: 200,
+              headers: {
+                "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+              },
+            }
+          );
         }
       }
 
-      console.log(`[API /api/events] Event NOT FOUND in DB for ${paramType}: "${cleanParam}"`);
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
@@ -196,7 +224,15 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ events: allEventsList });
+    return NextResponse.json(
+      { events: allEventsList },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("GET /api/events error:", err);
     return NextResponse.json({ events: [] });

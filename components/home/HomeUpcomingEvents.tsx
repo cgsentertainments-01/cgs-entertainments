@@ -5,23 +5,24 @@ import Link from "next/link";
 import { ChevronRight, Calendar } from "lucide-react";
 import { EventCard, EventType } from "@/components/events/EventCard";
 
+let cachedUpcomingEvents: EventType[] | null = null;
+
 export function HomeUpcomingEvents() {
-  const [events, setEvents] = useState<EventType[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<EventType[]>(cachedUpcomingEvents || []);
+  const [loading, setLoading] = useState(cachedUpcomingEvents === null);
 
   const fetchUpcomingEvents = async () => {
     try {
-      setLoading(true);
-      const res = await fetch("/api/events?upcoming=true", { cache: "no-store" });
+      if (!cachedUpcomingEvents) setLoading(true);
+      const res = await fetch("/api/events?upcoming=true");
       if (res.ok) {
         const data = await res.json();
-        setEvents(data.events || []);
-      } else {
-        setEvents([]);
+        const loaded = data.events || [];
+        cachedUpcomingEvents = loaded;
+        setEvents(loaded);
       }
     } catch (err) {
       console.error("Failed to fetch upcoming events:", err);
-      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -29,10 +30,6 @@ export function HomeUpcomingEvents() {
 
   useEffect(() => {
     fetchUpcomingEvents();
-
-    const handleFocus = () => fetchUpcomingEvents();
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   return (

@@ -70,6 +70,33 @@ export interface DBEvent {
   updated_at?: string;
 }
 
+// In-memory cache for high-performance sub-millisecond API responses
+interface ServerEventsCache {
+  data: any[];
+  timestamp: number;
+}
+
+let _serverEventsCache: ServerEventsCache | null = null;
+const SERVER_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function getCachedEvents(): any[] | null {
+  if (_serverEventsCache && Date.now() - _serverEventsCache.timestamp < SERVER_CACHE_TTL_MS) {
+    return _serverEventsCache.data;
+  }
+  return null;
+}
+
+export function setCachedEvents(events: any[]) {
+  _serverEventsCache = {
+    data: events,
+    timestamp: Date.now(),
+  };
+}
+
+export function clearEventsCache() {
+  _serverEventsCache = null;
+}
+
 // Supabase is the single source of truth for events.
 // Process-local store is retired to prevent split-brain state in serverless runtimes.
 export function getStoreEvents(): DBEvent[] {
@@ -78,18 +105,19 @@ export function getStoreEvents(): DBEvent[] {
 
 // Deprecated no-ops retained for backwards compatibility
 export function insertInStore(_event: DBEvent) {
-  // No-op: Supabase PostgreSQL is the sole authoritative data store
+  clearEventsCache();
 }
 
 export function upsertInStore(_event: DBEvent) {
-  // No-op: Supabase PostgreSQL is the sole authoritative data store
+  clearEventsCache();
 }
 
 export function deleteFromStore(_id: string) {
-  // No-op: Supabase PostgreSQL is the sole authoritative data store
+  clearEventsCache();
 }
 
 export function revalidateEventCaches(id?: string, slug?: string) {
+  clearEventsCache();
   try {
     revalidatePath("/");
     revalidatePath("/events");
@@ -112,3 +140,4 @@ export function revalidateEventCaches(id?: string, slug?: string) {
     console.warn("Revalidation warning:", err);
   }
 }
+

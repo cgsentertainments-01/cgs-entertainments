@@ -27,6 +27,51 @@ interface CategoryData {
   eventsCount?: number;
 }
 
+const DEFAULT_PAGE_CATEGORIES: CategoryData[] = [
+  {
+    id: "11111111-1111-1111-1111-111111111111",
+    name: "Dance",
+    slug: "dance",
+    description: "Stage Dance Competitions & Auditions",
+    image: "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=85",
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222222",
+    name: "Modeling",
+    slug: "modeling",
+    description: "Fashion Shows & Runway Competitions",
+    image: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=85",
+  },
+  {
+    id: "33333333-3333-3333-3333-333333333333",
+    name: "Acting",
+    slug: "acting",
+    description: "Theatre, Monologues & Acting Awards",
+    image: "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&w=1200&q=85",
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444444",
+    name: "Singing",
+    slug: "singing",
+    description: "Vocal & Music Auditions",
+    image: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=85",
+  },
+  {
+    id: "55555555-5555-5555-5555-555555555555",
+    name: "Music",
+    slug: "music",
+    description: "Instrumental & Band Festivals",
+    image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=85",
+  },
+  {
+    id: "66666666-6666-6666-6666-666666666666",
+    name: "Photography",
+    slug: "photography",
+    description: "Talent Photo Contests",
+    image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=85",
+  },
+];
+
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [events, setEvents] = useState<any[]>([]);
@@ -39,24 +84,30 @@ export default function CategoriesPage() {
       setLoading(true);
       setError(false);
 
-      const [catRes, evtRes] = await Promise.all([
+      const [catRes, evtRes] = await Promise.allSettled([
         fetch("/api/categories", { cache: "no-store" }),
         fetch("/api/events?upcoming=true", { cache: "no-store" }),
       ]);
 
-      if (!catRes.ok) throw new Error("Failed to load categories");
+      if (catRes.status === "fulfilled" && catRes.value.ok) {
+        const catData = await catRes.value.json();
+        const loadedCategories: CategoryData[] =
+          Array.isArray(catData.categories) && catData.categories.length > 0
+            ? catData.categories
+            : DEFAULT_PAGE_CATEGORIES;
+        setCategories(loadedCategories);
+      } else {
+        setCategories(DEFAULT_PAGE_CATEGORIES);
+      }
 
-      const catData = await catRes.json();
-      const loadedCategories: CategoryData[] = catData.categories || [];
-      setCategories(loadedCategories);
-
-      if (evtRes.ok) {
-        const evtData = await evtRes.json();
+      if (evtRes.status === "fulfilled" && evtRes.value.ok) {
+        const evtData = await evtRes.value.json();
         setEvents(evtData.events || []);
       }
     } catch (err) {
-      console.error("Error fetching category page data:", err);
-      setError(true);
+      console.warn("Could not load categories, using fallback:", err);
+      setCategories(DEFAULT_PAGE_CATEGORIES);
+      setError(false);
     } finally {
       setLoading(false);
     }

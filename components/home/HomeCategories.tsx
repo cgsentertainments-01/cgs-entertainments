@@ -29,6 +29,51 @@ const PRESENTATION_EMOJIS: Record<string, string> = {
   entertainment: "🍿",
 };
 
+const DEFAULT_HOME_CATEGORIES: CategoryDbItem[] = [
+  {
+    id: "11111111-1111-1111-1111-111111111111",
+    name: "Dance",
+    slug: "dance",
+    description: "Stage Dance Competitions & Auditions",
+    display_order: 1,
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222222",
+    name: "Modeling",
+    slug: "modeling",
+    description: "Fashion Shows & Runway Competitions",
+    display_order: 2,
+  },
+  {
+    id: "33333333-3333-3333-3333-333333333333",
+    name: "Acting",
+    slug: "acting",
+    description: "Theatre, Monologues & Acting Awards",
+    display_order: 3,
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444444",
+    name: "Singing",
+    slug: "singing",
+    description: "Vocal & Music Auditions",
+    display_order: 4,
+  },
+  {
+    id: "55555555-5555-5555-5555-555555555555",
+    name: "Music",
+    slug: "music",
+    description: "Instrumental & Band Festivals",
+    display_order: 5,
+  },
+  {
+    id: "66666666-6666-6666-6666-666666666666",
+    name: "Photography",
+    slug: "photography",
+    description: "Talent Photo Contests",
+    display_order: 6,
+  },
+];
+
 export function HomeCategories() {
   const [categories, setCategories] = useState<CategoryDbItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,14 +84,19 @@ export function HomeCategories() {
       setLoading(true);
       setError(false);
       const res = await fetch("/api/categories", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch categories");
+      if (!res.ok) {
+        throw new Error(`Failed to fetch categories (status ${res.status})`);
+      }
       const data = await res.json();
-      if (data.error) throw new Error("API reported error");
-      setCategories(data.categories || []);
+      if (Array.isArray(data.categories) && data.categories.length > 0) {
+        setCategories(data.categories);
+      } else {
+        setCategories(DEFAULT_HOME_CATEGORIES);
+      }
     } catch (err) {
-      console.error("Error fetching homepage categories:", err);
-      setError(true);
-      setCategories([]);
+      console.warn("Could not load dynamic categories, using default categories:", err);
+      setCategories(DEFAULT_HOME_CATEGORIES);
+      setError(false);
     } finally {
       setLoading(false);
     }

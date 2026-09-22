@@ -20,14 +20,17 @@ import { isPublishedEvent } from "@/lib/event-lifecycle";
 
 const ITEMS_PER_PAGE = 12;
 
+let cachedEventsPageList: any[] | null = null;
+let cachedEventsPageCategories: any[] | null = null;
+
 function EventsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Primary data states
-  const [events, setEvents] = useState<any[]>([]);
-  const [categories, setCategories] = useState<{ id: string; name: string; slug?: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Data states with immediate cache hydration
+  const [events, setEvents] = useState<any[]>(cachedEventsPageList || []);
+  const [categories, setCategories] = useState<any[]>(cachedEventsPageCategories || []);
+  const [loading, setLoading] = useState<boolean>(cachedEventsPageList === null);
   const [error, setError] = useState(false);
 
   // Active Filter states
@@ -78,30 +81,40 @@ function EventsPageContent() {
     window.history.replaceState(null, "", newPath);
   };
 
-  // Fetch events and category data from backend APIs
+  // Fetch events and category data from backend APIs with background revalidation
   const loadData = async () => {
     try {
-      setLoading(true);
+      if (!cachedEventsPageList) {
+        setLoading(true);
+      }
       setError(false);
 
-      const [evtRes, catRes] = await Promise.all([
-        fetch("/api/events?type=published", { cache: "no-store" }),
-        fetch("/api/categories", { cache: "no-store" }),
+      const [evtRes, catRes] = await Promise.allSettled([
+        fetch("/api/events?type=published"),
+        fetch("/api/categories"),
       ]);
 
-      if (!evtRes.ok) throw new Error("Failed to load events");
+      if (evtRes.status === "fulfilled" && evtRes.value.ok) {
+        const evtData = await evtRes.value.json();
+        const loadedEvents = evtData.events || [];
+        cachedEventsPageList = loadedEvents;
+        setEvents(loadedEvents);
+      } else if (!cachedEventsPageList) {
+        setError(true);
+      }
 
-      const evtData = await evtRes.json();
-      setEvents(evtData.events || []);
-
-      if (catRes.ok) {
-        const cData = await catRes.json();
-        setCategories(cData.categories || []);
+      if (catRes.status === "fulfilled" && catRes.value.ok) {
+        const cData = await catRes.value.json();
+        const loadedCategories = cData.categories || [];
+        cachedEventsPageCategories = loadedCategories;
+        setCategories(loadedCategories);
       }
     } catch (err) {
       console.error("Error loading events page data:", err);
-      setError(true);
-      setEvents([]);
+      if (!cachedEventsPageList) {
+        setError(true);
+        setEvents([]);
+      }
     } finally {
       setLoading(false);
     }

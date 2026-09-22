@@ -37,9 +37,12 @@ export type EventHubItem = {
   is_featured?: boolean;
 };
 
+let cachedHubEvents: EventHubItem[] | null = null;
+let cachedHubChips: { id: string; label: string; badge: string }[] | null = null;
+
 export function DiscoverEventHub() {
-  const [events, setEvents] = useState<EventHubItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<EventHubItem[]>(cachedHubEvents || []);
+  const [loading, setLoading] = useState(cachedHubEvents === null);
 
   // Filter & Search states
   const [search, setSearch] = useState("");
@@ -51,14 +54,14 @@ export function DiscoverEventHub() {
   const [filterModalOpen, setFilterModalOpen] = useState(false);
 
   // Dynamic Categories state
-  const [dbCategories, setDbCategories] = useState<{ id: string; label: string; badge: string }[]>([
-    { id: "all", label: "All", badge: "ALL" },
-  ]);
+  const [dbCategories, setDbCategories] = useState<{ id: string; label: string; badge: string }[]>(
+    cachedHubChips || [{ id: "all", label: "All", badge: "ALL" }]
+  );
 
   useEffect(() => {
     async function fetchChips() {
       try {
-        const res = await fetch("/api/categories", { cache: "no-store" });
+        const res = await fetch("/api/categories");
         if (res.ok) {
           const data = await res.json();
           if (data.categories && data.categories.length > 0) {
@@ -67,11 +70,13 @@ export function DiscoverEventHub() {
               label: c.name,
               badge: (c.slug || c.name).toUpperCase(),
             }));
-            setDbCategories([{ id: "all", label: "All", badge: "ALL" }, ...mapped]);
+            const chips = [{ id: "all", label: "All", badge: "ALL" }, ...mapped];
+            cachedHubChips = chips;
+            setDbCategories(chips);
           }
         }
       } catch (err) {
-        console.error("Failed to load category chips:", err);
+        console.warn("Notice loading category chips:", err);
       }
     }
     fetchChips();
@@ -109,18 +114,20 @@ export function DiscoverEventHub() {
     });
   };
 
-  // Fetch events from API
+  // Fetch events immediately from API with background revalidation
   useEffect(() => {
     let isMounted = true;
     async function loadEvents() {
       try {
-        setLoading(true);
-        const res = await fetch("/api/events?all=true", { cache: "no-store" });
+        if (!cachedHubEvents) {
+          setLoading(true);
+        }
+        const res = await fetch("/api/events?type=published");
         if (res.ok) {
           const data = await res.json();
-          if (isMounted && data.events) {
+          if (isMounted && Array.isArray(data.events)) {
+            cachedHubEvents = data.events;
             setEvents(data.events);
-            return;
           }
         }
       } catch (err) {
@@ -459,8 +466,27 @@ export function DiscoverEventHub() {
           )}
         </div>
 
-        {/* Featured Card matching wireframe */}
-        {featuredEvent ? (
+        {/* Featured Card matching wireframe with loading skeleton */}
+        {loading ? (
+          <div
+            style={{
+              background: "#FFFFFF",
+              border: "1.5px solid #E5E7EB",
+              borderRadius: 24,
+              overflow: "hidden",
+              boxShadow: "0 12px 32px rgba(0, 0, 0, 0.04)",
+            }}
+            className="skeleton-pulse"
+          >
+            <div style={{ width: "100%", height: 260, background: "#F3F4F6" }} />
+            <div style={{ padding: "20px 22px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ width: "60%", height: 24, background: "#E5E7EB", borderRadius: 8 }} />
+              <div style={{ width: "40%", height: 16, background: "#E5E7EB", borderRadius: 6 }} />
+              <div style={{ width: "85%", height: 16, background: "#E5E7EB", borderRadius: 6 }} />
+              <div style={{ width: "100%", height: 46, background: "#E5E7EB", borderRadius: 14, marginTop: 8 }} />
+            </div>
+          </div>
+        ) : featuredEvent ? (
           <div
             style={{
               background: "#FFFFFF",
@@ -709,8 +735,41 @@ export function DiscoverEventHub() {
           </Link>
         </div>
 
-        {/* Cards Grid - 2 columns on mobile */}
-        {upcomingList.length > 0 ? (
+        {/* Cards Grid with Loading Skeletons */}
+        {loading ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 18,
+            }}
+            className="upcoming-events-grid"
+          >
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                style={{
+                  background: "#FFFFFF",
+                  border: "1.5px solid #E5E7EB",
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                  height: 340,
+                }}
+                className="skeleton-pulse"
+              >
+                <div style={{ width: "100%", height: 180, background: "#F3F4F6" }} />
+                <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+                  <div style={{ width: "80%", height: 18, background: "#E5E7EB", borderRadius: 6 }} />
+                  <div style={{ width: "50%", height: 14, background: "#E5E7EB", borderRadius: 6 }} />
+                  <div style={{ width: "40%", height: 14, background: "#E5E7EB", borderRadius: 6 }} />
+                  <div style={{ width: "100%", height: 36, background: "#E5E7EB", borderRadius: 10, marginTop: "auto" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : upcomingList.length > 0 ? (
           <div
             style={{
               display: "grid",
@@ -954,6 +1013,13 @@ export function DiscoverEventHub() {
         .filter-gear-btn:hover {
           border-color: #6D28D9 !important;
           transform: translateY(-2px);
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.45; }
+        }
+        .skeleton-pulse {
+          animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
       `}</style>
     </div>
