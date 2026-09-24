@@ -2,6 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { MobileNav } from "@/components/layout/MobileNav";
+<<<<<<< HEAD
+=======
+import { Analytics } from "@vercel/analytics/next";
+>>>>>>> f593e93 (Add Vercel Analytics1)
 
 export const metadata: Metadata = {
   title: "CGS Entertainments – India's Premier Competition Platform",
@@ -26,6 +30,10 @@ export default function RootLayout({
           {children}
           <MobileNav />
         </AuthProvider>
+<<<<<<< HEAD
+=======
+        <Analytics />
+>>>>>>> f593e93 (Add Vercel Analytics1)
       </body>
     </html>
   );
